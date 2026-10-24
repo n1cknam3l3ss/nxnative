@@ -33,6 +33,13 @@ uint64_t resolve_import(module_t *m, const char *name) {
             if (g_flag.imports) { Dl_info di; dladdr(sec[i].fn, &di); LOG("import %s -> %s", name, di.dli_sname); }
             void *hlecount_wrap(const char *, const char *, void *); return (uint64_t)hlecount_wrap("HLE", name, sec[i].fn);   // With DM_HLECOUNT it is a counting stub (including the libc passthrough table)
         }
+    static const hle_ent *glsec; static unsigned long glsecsz;
+    if (!glsec) glsec = (const hle_ent *)getsectiondata(&_mh_execute_header, "__DATA", "swgl", &glsecsz);
+    for (unsigned i = 0; glsec && i < glsecsz / sizeof(hle_ent); i++)
+        if (!strcmp(glsec[i].name, name)) {
+            if (g_flag.imports) { Dl_info di; dladdr(glsec[i].fn, &di); LOG("import %s -> GL %s", name, di.dli_sname); }
+            void *hlecount_wrap(const char *, const char *, void *); return (uint64_t)hlecount_wrap("HLE", name, glsec[i].fn);
+        }
     // Reuse the stub if one was already allocated for the same name
     void *hlecount_wrap(const char *, const char *, void *);
     for (unsigned k = 0; k < g_nstub; k++)
@@ -48,6 +55,8 @@ uint64_t resolve_import(module_t *m, const char *name) {
 int hle_implements(const char *name) {
     unsigned long secsz; const hle_ent *sec = (const hle_ent *)getsectiondata(&_mh_execute_header, "__DATA", "swhle", &secsz);
     for (unsigned i = 0; sec && i < secsz / sizeof(hle_ent); i++) if (!strcmp(sec[i].name, name)) return 1;
+    unsigned long glsecsz; const hle_ent *glsec = (const hle_ent *)getsectiondata(&_mh_execute_header, "__DATA", "swgl", &glsecsz);
+    for (unsigned i = 0; glsec && i < glsecsz / sizeof(hle_ent); i++) if (!strcmp(glsec[i].name, name)) return 1;
     return 0;
 }
 
