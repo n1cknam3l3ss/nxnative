@@ -17,6 +17,11 @@ jobs:
         with:
           lfs: true
 
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Set up Homebrew dependencies
         run: |
           brew install xcodegen zstd spirv-cross glslang
@@ -25,7 +30,7 @@ jobs:
       - name: Set up Python dependencies
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install lz4 capstone fonttools "backports.zstd; python_version < '3.14'"
+          python3 -m pip install --break-system-packages lz4 capstone fonttools "backports.zstd; python_version < '3.14'"
 
       - name: Prepare Directories and Keys
         env:
