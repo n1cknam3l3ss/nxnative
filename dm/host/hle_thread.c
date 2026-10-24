@@ -976,3 +976,22 @@ void hle_clear_system_event(void *ev) {   // Clear a bound service-layer SystemE
     }
     pthread_mutex_unlock(&G);
 }
+
+void dm_wake_deadlock(void) {
+    LOG("user: sending wake-up broadcast to all waiting threads and system events");
+    pthread_mutex_lock(&G);
+    for (thr_t *t = g_wait; t; t = t->next) {
+        pthread_cond_broadcast(&t->cv);
+    }
+    pthread_mutex_lock(&g_se_lock);
+    for (int i = 0; i < g_nse; i++) {
+        uint32_t wh = g_se[i].wh;
+        event_t *e = wh ? h_get(wh, O_EVENT_W) : NULL;
+        if (e) {
+            e->signaled = 1;
+            wake_sync_waiters(e);
+        }
+    }
+    pthread_mutex_unlock(&g_se_lock);
+    pthread_mutex_unlock(&G);
+}

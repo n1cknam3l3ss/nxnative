@@ -564,14 +564,46 @@ static CGFloat dist(CGPoint a, CGPoint b) { return hypot(a.x - b.x, a.y - b.y); 
     if (game) [self pushGame];
     [self recompute];
 }
+- (void)showInGameMenu {
+    UIViewController *vc = self.window.rootViewController;
+    if (!vc) return;
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"Пауза / Меню" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+
+    [ac addAction:[UIAlertAction actionWithStyle:UIAlertActionStyleDefault title:@"⚡ Отправить сигнал пробуждения" handler:^(UIAlertAction *a) {
+        extern void dm_wake_deadlock(void);
+        dm_wake_deadlock();
+        UINotificationFeedbackGenerator *gen = [UINotificationFeedbackGenerator new];
+        [gen notificationOccurred:UINotificationFeedbackTypeSuccess];
+    }]];
+
+    [ac addAction:[UIAlertAction actionWithStyle:UIAlertActionStyleDefault title:@"🎮 Изменить раскладку" handler:^(UIAlertAction *a) {
+        extern void dm_show_controls_editor(void *);
+        dm_show_controls_editor((__bridge void *)vc);
+    }]];
+
+    [ac addAction:[UIAlertAction actionWithStyle:UIAlertActionStyleDestructive title:@"🚪 Выйти из игры" handler:^(UIAlertAction *a) {
+        extern void dm_host_shutdown(const char *);
+        dm_host_shutdown("user requested exit");
+    }]];
+
+    [ac addAction:[UIAlertAction actionWithStyle:UIAlertActionStyleCancel title:@"Отмена" handler:nil]];
+
+    if (ac.popoverPresentationController) {
+        ac.popoverPresentationController.sourceView = self;
+        CGPoint cp = self.swapCenter;
+        ac.popoverPresentationController.sourceRect = CGRectMake(cp.x - 20, cp.y - 20, 40, 40);
+    }
+
+    [vc presentViewController:ac animated:YES completion:nil];
+}
+
 - (void)endTouches:(NSSet<UITouch *> *)ts tapped:(BOOL)ended {
     BOOL swap = NO, game = NO;
     for (UITouch *t in ts) {
         uint64_t v = [_owner objectForKey:t].unsignedLongLongValue;
         if (ended && (v & 0xff) == C_SWAP && [self inSwap:[t locationInView:self]]) {
-            if ([NSDate timeIntervalSinceReferenceDate] - _swapDownTime >= 0.8 && self.window.rootViewController) {
-                extern void dm_show_controls_editor(void *);
-                dm_show_controls_editor((__bridge void *)self.window.rootViewController);
+            if ([NSDate timeIntervalSinceReferenceDate] - _swapDownTime >= 0.7) {
+                [self showInGameMenu];
             } else {
                 swap = YES;
             }
