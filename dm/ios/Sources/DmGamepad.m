@@ -26,6 +26,115 @@
 enum { B_A = 0, B_B, B_X, B_Y, B_LS, B_RS, B_L, B_R, B_ZL, B_ZR, B_PLUS, B_MINUS, B_LEFT, B_UP, B_RIGHT, B_DOWN, B_N };
 enum { C_NONE = 0, C_STICK, C_DPAD, C_FACE, C_BTN, C_SWAP, C_GAME };   // which control a touch holds; C_GAME: none, the touch goes to the game's touch screen (finger slot << 8)
 
+// ---- Custom Controls Configuration (from ControlsEditor.swift) ----
+typedef struct {
+    CGPoint norm_pos;
+    CGFloat scale;
+    CGFloat opacity;
+    BOOL is_toggle;
+    BOOL is_hidden;
+    int mapping;
+    BOOL has_custom;
+} CustomButtonConfig;
+
+static CustomButtonConfig g_custom_btns[B_N];
+static CustomButtonConfig g_custom_stick;
+static CustomButtonConfig g_custom_dpad;
+static uint64_t g_toggle_mask = 0;
+static uint64_t g_toggle_active = 0;
+
+static int btn_id_from_string(NSString *s) {
+    if ([s isEqualToString:@"A"]) return B_A;
+    if ([s isEqualToString:@"B"]) return B_B;
+    if ([s isEqualToString:@"X"]) return B_X;
+    if ([s isEqualToString:@"Y"]) return B_Y;
+    if ([s isEqualToString:@"L3"] || [s isEqualToString:@"LS"]) return B_LS;
+    if ([s isEqualToString:@"R3"] || [s isEqualToString:@"RS"]) return B_RS;
+    if ([s isEqualToString:@"L"]) return B_L;
+    if ([s isEqualToString:@"R"]) return B_R;
+    if ([s isEqualToString:@"ZL"]) return B_ZL;
+    if ([s isEqualToString:@"ZR"]) return B_ZR;
+    if ([s isEqualToString:@"+"] || [s isEqualToString:@"PLUS"]) return B_PLUS;
+    if ([s isEqualToString:@"−"] || [s isEqualToString:@"-"] || [s isEqualToString:@"MINUS"]) return B_MINUS;
+    return -1;
+}
+
+static void load_custom_controls(void) {
+    static BOOL loaded = NO;
+    for (int i = 0; i < B_N; i++) {
+        g_custom_btns[i].norm_pos = CGPointZero;
+        g_custom_btns[i].scale = 1.0;
+        g_custom_btns[i].opacity = 1.0;
+        g_custom_btns[i].is_toggle = NO;
+        g_custom_btns[i].is_hidden = NO;
+        g_custom_btns[i].mapping = i;
+        g_custom_btns[i].has_custom = NO;
+    }
+    g_custom_stick.norm_pos = CGPointZero; g_custom_stick.scale = 1.0; g_custom_stick.opacity = 1.0; g_custom_stick.has_custom = NO; g_custom_stick.is_hidden = NO;
+    g_custom_dpad.norm_pos = CGPointZero; g_custom_dpad.scale = 1.0; g_custom_dpad.opacity = 1.0; g_custom_dpad.has_custom = NO; g_custom_dpad.is_hidden = NO;
+    g_toggle_mask = 0;
+
+    NSData *data = [NSUserDefaults.standardUserDefaults objectForKey:@"DmControlsLayout_v1"];
+    if (!data) {
+        NSString *docPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject stringByAppendingPathComponent:@"controls.json"];
+        data = [NSData dataWithContentsOfFile:docPath];
+    }
+    if (!data) return;
+
+    NSArray *list = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    if (![list isKindOfClass:NSArray.class]) return;
+
+    for (NSDictionary *d in list) {
+        if (![d isKindOfClass:NSDictionary.class]) continue;
+        NSString *btnId = d[@"id"];
+        if (!btnId) continue;
+        CGFloat x = [d[@"x"] doubleValue];
+        CGFloat y = [d[@"y"] doubleValue];
+        CGFloat sc = [d[@"scale"] doubleValue]; if (sc <= 0.1) sc = 1.0;
+        CGFloat op = [d[@"opacity"] doubleValue]; if (op <= 0.05) op = 1.0;
+        BOOL tog = [d[@"isToggle"] boolValue];
+        BOOL hid = [d[@"isHidden"] boolValue];
+        NSString *mapStr = d[@"mapping"] ?: btnId;
+
+        if ([btnId isEqualToString:@"STICK"]) {
+            g_custom_stick.norm_pos = CGPointMake(x, y);
+            g_custom_stick.scale = sc;
+            g_custom_stick.opacity = op;
+            g_custom_stick.is_hidden = hid;
+            g_custom_stick.has_custom = YES;
+            continue;
+        }
+        if ([btnId isEqualToString:@"DPAD"]) {
+            g_custom_dpad.norm_pos = CGPointMake(x, y);
+            g_custom_dpad.scale = sc;
+            g_custom_dpad.opacity = op;
+            g_custom_dpad.is_hidden = hid;
+            g_custom_dpad.has_custom = YES;
+            continue;
+        }
+
+        int b = btn_id_from_string(btnId);
+        if (b < 0 || b >= B_N) continue;
+
+        int mb = btn_id_from_string(mapStr);
+        if (mb < 0 || mb >= B_N) mb = b;
+
+        g_custom_btns[b].norm_pos = CGPointMake(x, y);
+        g_custom_btns[b].scale = sc;
+        g_custom_btns[b].opacity = op;
+        g_custom_btns[b].is_toggle = tog;
+        g_custom_btns[b].is_hidden = hid;
+        g_custom_btns[b].mapping = mb;
+        g_custom_btns[b].has_custom = YES;
+
+        if (tog) {
+            g_toggle_mask |= (1ull << b);
+        }
+    }
+    loaded = YES;
+}
+
+
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t g_touch_btn, g_pad_btn, g_shake_btn;
 static int32_t g_touch_lx, g_touch_ly, g_touch_rx, g_touch_ry, g_pad_lx, g_pad_ly, g_pad_rx, g_pad_ry;
@@ -164,14 +273,37 @@ static BOOL fullOnly(int b) { return b == B_LS || b == B_RS || b >= B_LEFT; }   
         [nc addObserver:self selector:@selector(padsChanged) name:GCControllerDidConnectNotification object:nil];
         [nc addObserver:self selector:@selector(padsChanged) name:GCControllerDidDisconnectNotification object:nil];
         [self padsChanged];
+        UILongPressGestureRecognizer *lp = [[UILongPressGestureRecognizer alloc] initWithTarget:self selector:@selector(handleLongPress:)];
+        lp.minimumPressDuration = 1.0;
+        [self addGestureRecognizer:lp];
         motion_start();
     }
     return self;
 }
+- (void)handleLongPress:(UILongPressGestureRecognizer *)g {
+    if (g.state == UIGestureRecognizerStateBegan) {
+        CGPoint p = [g locationInView:self];
+        if ([self inSwap:p] && self.window.rootViewController) {
+            extern void dm_show_controls_editor(void *);
+            dm_show_controls_editor((__bridge void *)self.window.rootViewController);
+        }
+    }
+}
 - (void)applyLayout {   // show / hide the controls for the current layout
+    load_custom_controls();
     [CATransaction begin]; [CATransaction setDisableActions:YES];
-    for (int b = 0; b < B_N; b++) _key[b].hidden = _tap || (fullOnly(b) && !_full);
-    _ring.hidden = _knob.hidden = _tap;
+    for (int b = 0; b < B_N; b++) {
+        BOOL hide = _tap || (fullOnly(b) && !_full) || (g_custom_btns[b].has_custom && g_custom_btns[b].is_hidden);
+        _key[b].hidden = hide;
+        if (g_custom_btns[b].has_custom) _key[b].opacity = g_custom_btns[b].opacity;
+    }
+    BOOL hideStick = _tap || (g_custom_stick.has_custom && g_custom_stick.is_hidden);
+    _ring.hidden = _knob.hidden = hideStick;
+    if (g_custom_stick.has_custom) _ring.opacity = _knob.opacity = g_custom_stick.opacity;
+
+    BOOL hideDpad = _tap || !_full || (g_custom_dpad.has_custom && g_custom_dpad.is_hidden);
+    for (int i = B_LEFT; i <= B_DOWN; i++) if (hideDpad) _key[i].hidden = YES;
+
     _swapLabel.string = _tap ? @"Tap" : _full ? @"3D" : @"2D";
     [CATransaction commit];
 }
@@ -191,23 +323,82 @@ static CGPoint side(CGRect s, int right, CGFloat dx, CGFloat y) { return CGPoint
 - (CGPoint)faceCenter { CGRect s = self.corner; CGFloat u = self.u; return side(s, 1, K_FACE_X * u, CGRectGetMaxY(s) - K_PAD_Y * u); }
 - (CGFloat)faceGap { return K_FACE_GAP * self.u; }
 - (CGFloat)faceR { return K_FACE_R * self.u; }
-- (CGPoint)facePos:(int)b { CGPoint c = self.faceCenter; CGFloat g = self.faceGap;
+- (CGFloat)faceR:(int)b {
+    CGFloat r = K_FACE_R * self.u;
+    if (b >= 0 && b < B_N && g_custom_btns[b].has_custom) r *= g_custom_btns[b].scale;
+    return r;
+}
+- (CGPoint)facePos:(int)b {
+    if (b >= 0 && b < B_N && g_custom_btns[b].has_custom) {
+        CGRect bnd = self.bounds;
+        return CGPointMake(g_custom_btns[b].norm_pos.x * bnd.size.width, g_custom_btns[b].norm_pos.y * bnd.size.height);
+    }
+    CGPoint c = self.faceCenter; CGFloat g = self.faceGap;
     switch (b) { case B_A: return CGPointMake(c.x + g, c.y); case B_B: return CGPointMake(c.x, c.y + g); case B_X: return CGPointMake(c.x, c.y - g); default: return CGPointMake(c.x - g, c.y); } }
-- (CGPoint)stickHome { CGRect s = self.corner; return side(s, 0, K_STICK_X * self.u, CGRectGetMaxY(s) - K_PAD_Y * self.u); }   // the left stick's ring centre
+- (CGPoint)stickHome {
+    if (g_custom_stick.has_custom) {
+        CGRect bnd = self.bounds;
+        return CGPointMake(g_custom_stick.norm_pos.x * bnd.size.width, g_custom_stick.norm_pos.y * bnd.size.height);
+    }
+    CGRect s = self.corner; return side(s, 0, K_STICK_X * self.u, CGRectGetMaxY(s) - K_PAD_Y * self.u);
+}
 - (CGPoint)stickCentre:(int)i { return i ? _rCentre : self.stickHome; }
-- (CGFloat)stickR:(int)i { return (i ? K_RSTICK_R : K_STICK_R) * self.u; }
+- (CGFloat)stickR:(int)i {
+    CGFloat r = (i ? K_RSTICK_R : K_STICK_R) * self.u;
+    if (i == 0 && g_custom_stick.has_custom) r *= g_custom_stick.scale;
+    return r;
+}
 - (BOOL)inRightArea:(CGPoint)p { CGRect b = self.bounds; return p.x >= CGRectGetMaxX(b) - b.size.width * K_RSWIPE; }
-- (CGPoint)dpadCenter { CGRect s = self.corner; CGFloat u = self.u; return side(s, 0, K_LOW_X * u, CGRectGetMaxY(s) - K_LOW_Y * u); }
-- (CGFloat)dpadR { return K_DPAD_R * self.u; }
+- (CGPoint)dpadCenter {
+    if (g_custom_dpad.has_custom) {
+        CGRect bnd = self.bounds;
+        return CGPointMake(g_custom_dpad.norm_pos.x * bnd.size.width, g_custom_dpad.norm_pos.y * bnd.size.height);
+    }
+    CGRect s = self.corner; CGFloat u = self.u; return side(s, 0, K_LOW_X * u, CGRectGetMaxY(s) - K_LOW_Y * u);
+}
+- (CGFloat)dpadR {
+    CGFloat r = K_DPAD_R * self.u;
+    if (g_custom_dpad.has_custom) r *= g_custom_dpad.scale;
+    return r;
+}
 static BOOL isDrop(int b) { return b == B_ZL || b == B_L || b == B_ZR || b == B_R; }
 static BOOL isClick(int b) { return b == B_LS || b == B_RS; }
-- (CGPoint)dropCenter:(int)b { CGRect s = self.safe; CGFloat u = self.u; BOOL z = b == B_ZL || b == B_ZR;
-    return side(s, b == B_ZR || b == B_R, (z ? K_ZL_X : K_L_X) * u, CGRectGetMinY(s) + (z ? K_ZL_Y : K_L_Y) * u); }
-- (CGFloat)dropR:(int)b { return (b == B_ZL || b == B_ZR ? K_ZL_R : K_L_R) * self.u; }
-- (CGPoint)clickCenter:(int)b { CGRect s = self.safe; CGFloat u = self.u; return side(s, b == B_RS, K_CLICK_X * u, CGRectGetMinY(s) + K_ZL_Y * u); }
-- (CGRect)pillRect:(int)b { CGRect s = self.safe; CGFloat u = self.u, w = K_PILL_W * u, h = K_PILL_H * u;
-    CGPoint c = CGPointMake(CGRectGetMidX(s) + (b == B_PLUS ? K_PILL_DX : -K_PILL_DX) * u, CGRectGetMinY(s) + K_PILL_Y * u);   // − on the left, + on the right
-    return CGRectMake(c.x - w / 2, c.y - h / 2, w, h); }
+- (CGPoint)dropCenter:(int)b {
+    if (b >= 0 && b < B_N && g_custom_btns[b].has_custom) {
+        CGRect bnd = self.bounds;
+        return CGPointMake(g_custom_btns[b].norm_pos.x * bnd.size.width, g_custom_btns[b].norm_pos.y * bnd.size.height);
+    }
+    CGRect s = self.safe; CGFloat u = self.u; BOOL z = b == B_ZL || b == B_ZR;
+    return side(s, b == B_ZR || b == B_R, (z ? K_ZL_X : K_L_X) * u, CGRectGetMinY(s) + (z ? K_ZL_Y : K_L_Y) * u);
+}
+- (CGFloat)dropR:(int)b {
+    CGFloat r = (b == B_ZL || b == B_ZR ? K_ZL_R : K_L_R) * self.u;
+    if (b >= 0 && b < B_N && g_custom_btns[b].has_custom) r *= g_custom_btns[b].scale;
+    return r;
+}
+- (CGPoint)clickCenter:(int)b {
+    if (b >= 0 && b < B_N && g_custom_btns[b].has_custom) {
+        CGRect bnd = self.bounds;
+        return CGPointMake(g_custom_btns[b].norm_pos.x * bnd.size.width, g_custom_btns[b].norm_pos.y * bnd.size.height);
+    }
+    CGRect s = self.safe; CGFloat u = self.u; return side(s, b == B_RS, K_CLICK_X * u, CGRectGetMinY(s) + K_ZL_Y * u);
+}
+- (CGFloat)clickR:(int)b {
+    CGFloat r = K_CLICK_R * self.u;
+    if (b >= 0 && b < B_N && g_custom_btns[b].has_custom) r *= g_custom_btns[b].scale;
+    return r;
+}
+- (CGRect)pillRect:(int)b {
+    if (b >= 0 && b < B_N && g_custom_btns[b].has_custom) {
+        CGRect bnd = self.bounds;
+        CGFloat w = K_PILL_W * self.u * g_custom_btns[b].scale, h = K_PILL_H * self.u * g_custom_btns[b].scale;
+        CGPoint c = CGPointMake(g_custom_btns[b].norm_pos.x * bnd.size.width, g_custom_btns[b].norm_pos.y * bnd.size.height);
+        return CGRectMake(c.x - w / 2, c.y - h / 2, w, h);
+    }
+    CGRect s = self.safe; CGFloat u = self.u, w = K_PILL_W * u, h = K_PILL_H * u;
+    CGPoint c = CGPointMake(CGRectGetMidX(s) + (b == B_PLUS ? K_PILL_DX : -K_PILL_DX) * u, CGRectGetMinY(s) + K_PILL_Y * u);
+    return CGRectMake(c.x - w / 2, c.y - h / 2, w, h);
+}
 - (CGPoint)swapCenter { CGRect s = self.safe; return CGPointMake(CGRectGetMidX(s), CGRectGetMinY(s) + K_PILL_Y * self.u); }
 
 static CGFloat dist(CGPoint a, CGPoint b) { return hypot(a.x - b.x, a.y - b.y); }
@@ -215,16 +406,21 @@ static CGFloat dist(CGPoint a, CGPoint b) { return hypot(a.x - b.x, a.y - b.y); 
     CGFloat u = self.u;
     for (int i = 0; i < (int)(sizeof k_btns / sizeof *k_btns); i++) { int b = k_btns[i];
         if (fullOnly(b) && !_full) continue;
+        if (g_custom_btns[b].has_custom && g_custom_btns[b].is_hidden) continue;
         BOOL hit = isDrop(b) ? dist(p, [self dropCenter:b]) <= [self dropR:b] * 1.35
-                 : isClick(b) ? dist(p, [self clickCenter:b]) <= K_CLICK_R * u * 1.35
+                 : isClick(b) ? dist(p, [self clickCenter:b]) <= [self clickR:b] * 1.35
                  : CGRectContainsPoint(CGRectInset([self pillRect:b], -8 * u, -8 * u), p);
         if (hit) return b; }
     return -1;
 }
 - (BOOL)inSwap:(CGPoint)p { return dist(p, self.swapCenter) <= K_SWAP_R * self.u * 1.6; }
-- (uint64_t)faceAt:(CGPoint)p {   // keys under the finger in the diamond (between two keys both count)
-    uint64_t m = 0; CGFloat r = self.faceR * 1.25;
-    for (int b = B_A; b <= B_Y; b++) if (dist(p, [self facePos:b]) <= r) m |= 1ull << b;
+- (uint64_t)faceAt:(CGPoint)p {   // keys under the finger in the diamond
+    uint64_t m = 0;
+    for (int b = B_A; b <= B_Y; b++) {
+        if (g_custom_btns[b].has_custom && g_custom_btns[b].is_hidden) continue;
+        CGFloat r = [self faceR:b] * 1.25;
+        if (dist(p, [self facePos:b]) <= r) m |= 1ull << b;
+    }
     return m;
 }
 - (uint64_t)dpadAt:(CGPoint)p {   // 8 directions: 45° each, diagonals press two keys; a small centre circle counts as none
@@ -259,8 +455,9 @@ static CGFloat dist(CGPoint a, CGPoint b) { return hypot(a.x - b.x, a.y - b.y); 
         CGFloat m = fmin((d - dz) / (R * K_FULL - dz), 1) / d;   // outside the dead zone: 0 rising to full at the full-tilt radius
         ax[i * 2] = (int32_t)lrint(o.x * m * 32767); ax[i * 2 + 1] = (int32_t)lrint(-o.y * m * 32767);   // host: up is positive; rounded so full tilt is exactly 32767
     }
-    BOOL changed = face != _faceBits || dpad != _dpadBits || btn != _btnBits || swap != _swapHeld;
-    uint64_t pressed = (face | dpad | btn) & ~(_faceBits | _dpadBits | _btnBits);
+    uint64_t all_btn = face | dpad | btn | g_toggle_active;
+    BOOL changed = all_btn != (_faceBits | _dpadBits | _btnBits) || swap != _swapHeld;
+    uint64_t pressed = all_btn & ~(_faceBits | _dpadBits | _btnBits);
     unsigned gripping = (_stick[0] ? 1u : 0) | (_stick[1] ? 2u : 0);
     if (pressed || (swap && !_swapHeld) || (gripping & ~_hapticSticks)) {
         [_touchFeedback impactOccurredWithIntensity:0.6]; [_touchFeedback prepare];
@@ -268,7 +465,7 @@ static CGFloat dist(CGPoint a, CGPoint b) { return hypot(a.x - b.x, a.y - b.y); 
     _hapticSticks = gripping;
     _faceBits = face; _dpadBits = dpad; _btnBits = btn; _swapHeld = swap;
     pthread_mutex_lock(&g_mu);
-    g_touch_btn = face | dpad | btn; g_touch_lx = ax[0]; g_touch_ly = ax[1]; g_touch_rx = ax[2]; g_touch_ry = ax[3];
+    g_touch_btn = all_btn; g_touch_lx = ax[0]; g_touch_ly = ax[1]; g_touch_rx = ax[2]; g_touch_ry = ax[3];
     pthread_mutex_unlock(&g_mu);
     publish();
     BOOL stick = _stick[0] != nil;   // only the left stick is drawn: the right one needs no refresh
@@ -298,16 +495,54 @@ static CGFloat dist(CGPoint a, CGPoint b) { return hypot(a.x - b.x, a.y - b.y); 
     for (UITouch *t in ts) {
         if (_padOff) { game |= [self gameBegin:t]; continue; }
         CGPoint p = [t locationInView:self]; int hit = _tap ? -1 : [self btnAt:p];
-        if (hit >= 0) { [_owner setObject:@(C_BTN | (uint64_t)hit << 8) forKey:t]; continue; }
+        if (hit >= 0) {
+            int mapped = g_custom_btns[hit].has_custom ? g_custom_btns[hit].mapping : hit;
+            if (g_toggle_mask & (1ull << hit)) {
+                g_toggle_active ^= (1ull << mapped);
+                [_touchFeedback impactOccurredWithIntensity:0.75];
+                [_touchFeedback prepare];
+                [self recompute];
+                continue;
+            }
+            [_owner setObject:@(C_BTN | (uint64_t)mapped << 8) forKey:t];
+            continue;
+        }
         if ([self inSwap:p]) { [_owner setObject:@(C_SWAP) forKey:t]; continue; }
         if (_tap) { game |= [self gameBegin:t]; continue; }
         // diamond, D-pad, left stick: take the one with the smallest distance / grab radius, if it is <= 1
         CGFloat best = 1; int kind = C_NONE, idx = 0;
-        CGFloat f = dist(p, self.faceCenter) / (self.faceGap + self.faceR * 1.6); if (f <= best) { best = f; kind = C_FACE; }
-        if (_full) { CGFloat d = dist(p, self.dpadCenter) / (self.dpadR * K_DPAD_GRAB); if (d < best) { best = d; kind = C_DPAD; } }
-        if (!_stick[0]) { CGFloat s = dist(p, self.stickHome) / ([self stickR:0] * K_STICK_GRAB); if (s < best) { best = s; kind = C_STICK; } }
-        if (kind == C_NONE && _full && !_stick[1] && [self inRightArea:p]) { kind = C_STICK; idx = 1; _rCentre = p; }   // the right stick: centred where the touch lands
-        if (kind == C_FACE) { [_owner setObject:@(C_FACE) forKey:t]; [_faceOf setObject:@([self faceAt:p]) forKey:t]; }
+        CGFloat f = dist(p, self.faceCenter) / (self.faceGap + self.faceR * 1.6);
+        for (int b = B_A; b <= B_Y; b++) {
+            if (dist(p, [self facePos:b]) <= [self faceR:b] * 1.35) { f = 0.5; break; }
+        }
+        if (f <= best) { best = f; kind = C_FACE; }
+        if (_full && !(g_custom_dpad.has_custom && g_custom_dpad.is_hidden)) {
+            CGFloat d = dist(p, self.dpadCenter) / (self.dpadR * K_DPAD_GRAB);
+            if (d < best) { best = d; kind = C_DPAD; }
+        }
+        if (!_stick[0] && !(g_custom_stick.has_custom && g_custom_stick.is_hidden)) {
+            CGFloat s = dist(p, self.stickHome) / ([self stickR:0] * K_STICK_GRAB);
+            if (s < best) { best = s; kind = C_STICK; }
+        }
+        if (kind == C_NONE && _full && !_stick[1] && [self inRightArea:p]) { kind = C_STICK; idx = 1; _rCentre = p; }
+        if (kind == C_FACE) {
+            uint64_t rawFace = [self faceAt:p];
+            uint64_t mappedFace = 0;
+            for (int fb = B_A; fb <= B_Y; fb++) {
+                if (rawFace & (1ull << fb)) {
+                    int mfb = g_custom_btns[fb].has_custom ? g_custom_btns[fb].mapping : fb;
+                    if (g_toggle_mask & (1ull << fb)) {
+                        g_toggle_active ^= (1ull << mfb);
+                        [_touchFeedback impactOccurredWithIntensity:0.75];
+                        [_touchFeedback prepare];
+                    } else {
+                        mappedFace |= (1ull << mfb);
+                    }
+                }
+            }
+            [_owner setObject:@(C_FACE) forKey:t];
+            [_faceOf setObject:@(mappedFace) forKey:t];
+        }
         else if (kind == C_DPAD) [_owner setObject:@(C_DPAD) forKey:t];
         else if (kind == C_STICK) { [_owner setObject:@(C_STICK | (uint64_t)idx << 8) forKey:t]; _stick[idx] = t; _stickNow[idx] = p; }
         else game |= [self gameBegin:t];
@@ -319,7 +554,19 @@ static CGFloat dist(CGPoint a, CGPoint b) { return hypot(a.x - b.x, a.y - b.y); 
     BOOL game = NO;
     for (UITouch *t in ts) {
         uint64_t v = [_owner objectForKey:t].unsignedLongLongValue; int c = (int)(v & 0xff); CGPoint p = [t locationInView:self];
-        if (c == C_FACE) [_faceOf setObject:@([self faceAt:p]) forKey:t];
+        if (c == C_FACE) {
+            uint64_t rawFace = [self faceAt:p];
+            uint64_t mappedFace = 0;
+            for (int fb = B_A; fb <= B_Y; fb++) {
+                if (rawFace & (1ull << fb)) {
+                    int mfb = g_custom_btns[fb].has_custom ? g_custom_btns[fb].mapping : fb;
+                    if (!(g_toggle_mask & (1ull << fb))) {
+                        mappedFace |= (1ull << mfb);
+                    }
+                }
+            }
+            [_faceOf setObject:@(mappedFace) forKey:t];
+        }
         else if (c == C_STICK) { _stickNow[v >> 8] = p;
             if ((v >> 8) == 1) { CGFloat d = dist(p, _rCentre), R = [self stickR:1];   // the right stick's centre follows a finger past its radius, so turning back responds at once
                 if (d > R) _rCentre = CGPointMake(p.x - (p.x - _rCentre.x) * R / d, p.y - (p.y - _rCentre.y) * R / d); } }
@@ -376,26 +623,38 @@ static void placeLabel(CATextLayer *t, CGPoint c, CGFloat fs) {
 
 - (void)layoutSubviews {
     [super layoutSubviews];
+    load_custom_controls();
     CGFloat u = self.u;
     [CATransaction begin]; [CATransaction setDisableActions:YES];
     _controls.frame = self.layer.bounds;
-    for (int b = B_A; b <= B_Y; b++) { CGPoint c = [self facePos:b]; setPath(_key[b], circlePath(c, self.faceR)); placeLabel(_label[b], c, 20 * u); }
+    for (int b = B_A; b <= B_Y; b++) {
+        CGPoint c = [self facePos:b];
+        setPath(_key[b], circlePath(c, [self faceR:b]));
+        placeLabel(_label[b], c, 20 * u * (g_custom_btns[b].has_custom ? g_custom_btns[b].scale : 1.0));
+    }
     for (int i = 0; i < (int)(sizeof k_btns / sizeof *k_btns); i++) { int b = k_btns[i];
+        CGFloat sc = g_custom_btns[b].has_custom ? g_custom_btns[b].scale : 1.0;
         if (isDrop(b)) {
             BOOL right = b == B_ZR || b == B_R; CGPoint c = [self dropCenter:b];
-            setPath(_key[b], dropPath(c, [self dropR:b], right ? -M_PI_4 : -3 * M_PI_4, 4 * u)); placeLabel(_label[b], c, 16 * u);   // tip toward the near top corner
+            setPath(_key[b], dropPath(c, [self dropR:b], right ? -M_PI_4 : -3 * M_PI_4, 4 * u * sc));
+            placeLabel(_label[b], c, 16 * u * sc);
         } else if (isClick(b)) {
-            CGPoint c = [self clickCenter:b]; setPath(_key[b], circlePath(c, K_CLICK_R * u)); placeLabel(_label[b], c, 13 * u);
+            CGPoint c = [self clickCenter:b];
+            setPath(_key[b], circlePath(c, [self clickR:b]));
+            placeLabel(_label[b], c, 13 * u * sc);
         } else {
             CGRect rc = [self pillRect:b];
-            setPath(_key[b], CGPathCreateWithRoundedRect(rc, rc.size.height / 2, rc.size.height / 2, NULL)); placeLabel(_label[b], CGPointMake(CGRectGetMidX(rc), CGRectGetMidY(rc)), 18 * u);
+            setPath(_key[b], CGPathCreateWithRoundedRect(rc, rc.size.height / 2, rc.size.height / 2, NULL));
+            placeLabel(_label[b], CGPointMake(CGRectGetMidX(rc), CGRectGetMidY(rc)), 18 * u * sc);
         }
     }
-    static const struct { int b; CGFloat angle; } arms[] = {{B_UP, 0}, {B_RIGHT, M_PI_2}, {B_DOWN, M_PI}, {B_LEFT, -M_PI_2}};   // the same arm in 90° steps
-    for (int i = 0; i < 4; i++) setPath(_key[arms[i].b], armPath(self.dpadCenter, self.dpadR, K_ARM_W * u, K_ARM_IN * u, arms[i].angle, 6 * u));
+    static const struct { int b; CGFloat angle; } arms[] = {{B_UP, 0}, {B_RIGHT, M_PI_2}, {B_DOWN, M_PI}, {B_LEFT, -M_PI_2}};
+    CGFloat dpadSc = g_custom_dpad.has_custom ? g_custom_dpad.scale : 1.0;
+    for (int i = 0; i < 4; i++) setPath(_key[arms[i].b], armPath(self.dpadCenter, self.dpadR, K_ARM_W * u * dpadSc, K_ARM_IN * u * dpadSc, arms[i].angle, 6 * u * dpadSc));
     CGPoint sc = self.swapCenter; setPath(_swap, circlePath(sc, K_SWAP_R * u)); placeLabel(_swapLabel, sc, 12 * u);
     setPath(_ring, circlePath(self.stickHome, [self stickR:0]));
-    CGFloat k = K_KNOB_R * u; _knob.bounds = CGRectMake(0, 0, 2 * k, 2 * k);
+    CGFloat k = K_KNOB_R * u * (g_custom_stick.has_custom ? g_custom_stick.scale : 1.0);
+    _knob.bounds = CGRectMake(0, 0, 2 * k, 2 * k);
     setPath(_knob, circlePath(CGPointMake(k, k), k));
     CAShapeLayer *in = (CAShapeLayer *)_knob.sublayers.firstObject; CGPathRef ip = circlePath(CGPointMake(k, k), k * 0.62);
     in.frame = _knob.bounds; in.path = ip; CGPathRelease(ip);
@@ -404,10 +663,22 @@ static void placeLabel(CATextLayer *t, CGPoint c, CGFloat fs) {
 }
 - (void)safeAreaInsetsDidChange { [super safeAreaInsetsDidChange]; [self setNeedsLayout]; }
 - (void)refresh {   // pressed state → fill, sticks → knob position
-    uint64_t all = _faceBits | _dpadBits | _btnBits;
+    uint64_t all = _faceBits | _dpadBits | _btnBits | g_toggle_active;
     [CATransaction begin]; [CATransaction setDisableActions:YES];
-    for (int b = 0; b < B_N; b++) { BOOL on = (all >> b) & 1;
-        _key[b].fillColor = (on ? k_on : k_idle).CGColor; _label[b].foregroundColor = (on ? k_textOn : k_text).CGColor; }
+    for (int b = 0; b < B_N; b++) {
+        int mapped = g_custom_btns[b].has_custom ? g_custom_btns[b].mapping : b;
+        BOOL on = (all >> mapped) & 1;
+        BOOL isTog = (g_toggle_mask >> b) & 1;
+        if (isTog) {
+            _key[b].strokeColor = (on ? [UIColor cyanColor] : [UIColor colorWithRed:0.2 green:0.8 blue:1.0 alpha:0.7]).CGColor;
+            _key[b].lineWidth = on ? 2.5 : 1.8;
+        } else {
+            _key[b].strokeColor = k_line.CGColor;
+            _key[b].lineWidth = 1.5;
+        }
+        _key[b].fillColor = (on ? k_on : k_idle).CGColor;
+        _label[b].foregroundColor = (on ? k_textOn : k_text).CGColor;
+    }
     _swap.fillColor = (_swapHeld ? k_on : k_idle).CGColor; _swapLabel.foregroundColor = (_swapHeld ? k_textOn : k_text).CGColor;
     CGPoint h = self.stickHome, o = [self knobOffset:0];
     _knob.position = CGPointMake(h.x + o.x, h.y + o.y); _knob.fillColor = (_stick[0] ? k_on : k_idle).CGColor;

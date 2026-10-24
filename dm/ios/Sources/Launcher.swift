@@ -78,6 +78,7 @@ private struct LauncherView: View {
     @ObservedObject var m: LauncherModel
     let play: () -> Void
     @State private var memory = os_proc_available_memory()
+    @State private var showControlsEditor = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -87,7 +88,10 @@ private struct LauncherView: View {
                 }
                 Text((info("CFBundleDisplayName") as? String) ?? "Game").font(.title.weight(.bold)).multilineTextAlignment(.center)
                 Text("Version \((info("CFBundleShortVersionString") as? String) ?? "")").font(.callout).foregroundStyle(.secondary)
-                playButton
+                VStack(spacing: 10) {
+                    playButton
+                    controlsButton
+                }
             }
             .padding(24)
             .frame(maxWidth: .infinity)
@@ -110,11 +114,24 @@ private struct LauncherView: View {
                 try? await Task.sleep(for: .seconds(2))
             }
         }
+        .fullScreenCover(isPresented: $showControlsEditor) {
+            ControlsEditorView()
+        }
     }
 
     @ViewBuilder var playButton: some View {
         let button = Button(action: play) { Text("Play").font(.title3.weight(.semibold)).frame(maxWidth: 220) }.controlSize(.large)
         if #available(iOS 26.0, *) { button.buttonStyle(.glassProminent) } else { button.buttonStyle(.borderedProminent) }
+    }
+
+    @ViewBuilder var controlsButton: some View {
+        Button(action: { showControlsEditor = true }) {
+            Label("Настройка управления", systemImage: "gamecontroller")
+                .font(.callout.weight(.medium))
+                .frame(maxWidth: 220)
+        }
+        .controlSize(.regular)
+        .buttonStyle(.bordered)
     }
 
     private func appIcon() -> UIImage? {
