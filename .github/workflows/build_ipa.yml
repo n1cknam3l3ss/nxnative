@@ -70,18 +70,18 @@ jobs:
             URL="${{ github.event.inputs.nsp_download_url }}"
             if [[ "$URL" == *".zip"* ]]; then
               echo "Downloading ZIP: $URL"
-              curl -L -C - "$URL" -o input_nsp/game.zip
+              curl --http1.1 --retry 20 --retry-delay 3 --retry-all-errors -L -C - "$URL" -o input_nsp/game.zip
               unzip -q input_nsp/game.zip -d input_nsp/ || true
               rm -f input_nsp/game.zip
             else
               echo "Downloading Base NSP: $URL"
-              curl -L -C - "$URL" -o "input_nsp/base.nsp"
+              curl --http1.1 --retry 20 --retry-delay 3 --retry-all-errors -L -C - "$URL" -o "input_nsp/base.nsp"
             fi
           fi
           if [ -n "${{ github.event.inputs.update_download_url }}" ]; then
             U_URL="${{ github.event.inputs.update_download_url }}"
             echo "Downloading Update NSP: $U_URL"
-            curl -L -C - "$U_URL" -o "input_nsp/update.nsp"
+            curl --http1.1 --retry 20 --retry-delay 3 --retry-all-errors -L -C - "$U_URL" -o "input_nsp/update.nsp"
           fi
 
       - name: Verify Input Files
