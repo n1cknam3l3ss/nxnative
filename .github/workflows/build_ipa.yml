@@ -4,7 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       nsp_download_url:
-        description: 'Optional direct download URL for NSP (zip or single nsp) if not committed via Git LFS'
+        description: 'Direct download URL for Base NSP (or zip)'
+        required: false
+        default: ''
+      update_download_url:
+        description: 'Direct download URL for Update NSP (optional)'
         required: false
         default: ''
       release_tag:
@@ -22,6 +26,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Free Disk Space
+        run: |
+          rm -rf /Users/runner/Library/Android || true
+          rm -rf /Users/runner/hostedtoolcache/CodeQL || true
+          df -h
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -52,11 +62,26 @@ jobs:
           fi
 
       - name: Download NSP if URL provided
-        if: "${{ github.event.inputs.nsp_download_url != '' }}"
         run: |
-          curl -L "${{ github.event.inputs.nsp_download_url }}" -o input_nsp/game.zip || curl -L "${{ github.event.inputs.nsp_download_url }}" -o input_nsp/game.nsp
-          if [ -f input_nsp/game.zip ]; then
-            unzip -q input_nsp/game.zip -d input_nsp/ || true
+          if [ -n "${{ github.event.inputs.nsp_download_url }}" ]; then
+            echo "URL provided, clearing existing input_nsp..."
+            rm -rf input_nsp/*
+            mkdir -p input_nsp
+            URL="${{ github.event.inputs.nsp_download_url }}"
+            if [[ "$URL" == *".zip"* ]]; then
+              echo "Downloading ZIP: $URL"
+              curl -L -C - "$URL" -o input_nsp/game.zip
+              unzip -q input_nsp/game.zip -d input_nsp/ || true
+              rm -f input_nsp/game.zip
+            else
+              echo "Downloading Base NSP: $URL"
+              curl -L -C - "$URL" -o "input_nsp/base.nsp"
+            fi
+          fi
+          if [ -n "${{ github.event.inputs.update_download_url }}" ]; then
+            U_URL="${{ github.event.inputs.update_download_url }}"
+            echo "Downloading Update NSP: $U_URL"
+            curl -L -C - "$U_URL" -o "input_nsp/update.nsp"
           fi
 
       - name: Verify Input Files
