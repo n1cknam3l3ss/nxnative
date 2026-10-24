@@ -1,0 +1,67 @@
+name: Build Katana ZERO IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      nsp_download_url:
+        description: 'Optional direct download URL for NSP (zip or single nsp) if not committed via Git LFS'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up Homebrew dependencies
+        run: |
+          brew install xcodegen zstd spirv-cross glslang
+          brew install --cask dotnet-sdk
+
+      - name: Set up Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install lz4 capstone fonttools "backports.zstd; python_version < '3.14'"
+
+      - name: Prepare Directories and Keys
+        env:
+          PROD_KEYS_SECRET: ${{ secrets.PROD_KEYS }}
+        run: |
+          mkdir -p input_nsp keys
+          if [ -n "$PROD_KEYS_SECRET" ]; then
+            echo "$PROD_KEYS_SECRET" > keys/prod.keys
+          fi
+
+      - name: Download NSP if URL provided
+        if: "${{ github.event.inputs.nsp_download_url != '' }}"
+        run: |
+          curl -L "${{ github.event.inputs.nsp_download_url }}" -o input_nsp/game.zip || curl -L "${{ github.event.inputs.nsp_download_url }}" -o input_nsp/game.nsp
+          if [ -f input_nsp/game.zip ]; then
+            unzip -q input_nsp/game.zip -d input_nsp/ || true
+          fi
+
+      - name: Verify Input Files
+        run: |
+          echo "=== Keys directory ==="
+          ls -la keys/ || true
+          echo "=== Input NSP directory ==="
+          ls -la input_nsp/ || true
+
+      - name: Run build_ipa_from_nsp
+        env:
+          DM_TEAM_ID: ""
+          PYTHONUTF8: "1"
+        run: |
+          python3 scripts/build_ipa_from_nsp.py input_nsp -k keys/prod.keys --no-heap-check
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KatanaZero-iOS-IPA
+          path: |
+            input_nsp/*.ipa
+            *.ipa

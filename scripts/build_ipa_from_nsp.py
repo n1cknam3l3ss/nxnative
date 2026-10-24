@@ -219,12 +219,19 @@ class Progress:
 
     def _out(self, text):   # a whole line above the live one (the caller holds the lock)
         if self.shown: sys.stdout.write('\r' + ' ' * self.shown + '\r'); self.shown = 0
-        print(text, flush=True)
+        try:
+            print(text, flush=True)
+        except Exception:
+            print(text.encode('ascii', errors='replace').decode('ascii'), flush=True)
         if self.mode == 'bar' and self.cur: self._draw()
 
     def _draw(self):
         line = self._line(self.cur, shutil.get_terminal_size((80, 24)).columns)   # Spyder has no size to ask, and a line that wraps there cannot be redrawn: 80 columns
-        sys.stdout.write('\r' + line + ' ' * max(self.shown - len(line), 0)); sys.stdout.flush()
+        try:
+            sys.stdout.write('\r' + line + ' ' * max(self.shown - len(line), 0)); sys.stdout.flush()
+        except Exception:
+            clean = line.encode('ascii', errors='replace').decode('ascii')
+            sys.stdout.write('\r' + clean + ' ' * max(self.shown - len(clean), 0)); sys.stdout.flush()
         self.shown = len(line)
 
     def _tick(self, stop):
@@ -351,10 +358,11 @@ def rmtree(p):
 def build_nx_extract(repo, work, logs, env):
     """Build nx_extract into <work>/tools/nx_extract/. It is built in a temporary folder and copied over: with an apostrophe in the output path (e.g. "Bowser's Fury") MSBuild's conditions break,
     LibHac.dll and the executable are not copied, and the build still reports success"""
-    nx = work / 'tools/nx_extract/nx_extract'
+    exe_name = 'nx_extract.exe' if os.name == 'nt' or sys.platform == 'win32' else 'nx_extract'
+    nx = work / f'tools/nx_extract/{exe_name}'
     with tempfile.TemporaryDirectory(prefix='nx_extract_') as t:
         run(['dotnet', 'build', repo / 'dm/tools/nx_extract', '-c', 'Release', '-o', t, '-v', 'quiet', '-nologo'], logs / 'nx_extract_build.log', env=env)
-        if not (Path(t) / 'nx_extract').exists(): raise BuildError(f'nx_extract built without an executable (see {logs / "nx_extract_build.log"})')
+        if not (Path(t) / exe_name).exists(): raise BuildError(f'nx_extract built without an executable (see {logs / "nx_extract_build.log"})')
         rmtree(nx.parent); shutil.copytree(t, nx.parent)
     return nx
 
