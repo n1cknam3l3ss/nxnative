@@ -135,7 +135,6 @@ static void load_custom_controls(BOOL full) {
             g_toggle_mask |= (1ull << b);
         }
     }
-    loaded = YES;
 }
 
 
