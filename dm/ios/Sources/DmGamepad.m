@@ -59,8 +59,7 @@ static int btn_id_from_string(NSString *s) {
     return -1;
 }
 
-static void load_custom_controls(void) {
-    static BOOL loaded = NO;
+static void load_custom_controls(BOOL full) {
     for (int i = 0; i < B_N; i++) {
         g_custom_btns[i].norm_pos = CGPointZero;
         g_custom_btns[i].scale = 1.0;
@@ -74,9 +73,14 @@ static void load_custom_controls(void) {
     g_custom_dpad.norm_pos = CGPointZero; g_custom_dpad.scale = 1.0; g_custom_dpad.opacity = 1.0; g_custom_dpad.has_custom = NO; g_custom_dpad.is_hidden = NO;
     g_toggle_mask = 0;
 
-    NSData *data = [NSUserDefaults.standardUserDefaults objectForKey:@"DmControlsLayout_v1"];
+    NSString *key = full ? @"DmControlsLayout_3D" : @"DmControlsLayout_2D";
+    NSData *data = [NSUserDefaults.standardUserDefaults objectForKey:key];
+    if (!data && !full) {
+        data = [NSUserDefaults.standardUserDefaults objectForKey:@"DmControlsLayout_v1"];
+    }
     if (!data) {
-        NSString *docPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject stringByAppendingPathComponent:@"controls.json"];
+        NSString *fn = full ? @"controls_3d.json" : @"controls_2d.json";
+        NSString *docPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject stringByAppendingPathComponent:fn];
         data = [NSData dataWithContentsOfFile:docPath];
     }
     if (!data) return;
@@ -278,7 +282,7 @@ static BOOL fullOnly(int b) { return b == B_LS || b == B_RS || b >= B_LEFT; }   
     return self;
 }
 - (void)applyLayout {   // show / hide the controls for the current layout
-    load_custom_controls();
+    load_custom_controls(_full);
     [CATransaction begin]; [CATransaction setDisableActions:YES];
     for (int b = 0; b < B_N; b++) {
         BOOL hide = _tap || (g_custom_btns[b].has_custom ? g_custom_btns[b].is_hidden : (fullOnly(b) && !_full));
@@ -569,24 +573,24 @@ static CGFloat dist(CGPoint a, CGPoint b) { return hypot(a.x - b.x, a.y - b.y); 
     if (!vc) return;
     UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"Пауза / Меню" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
 
-    [ac addAction:[UIAlertAction actionWithStyle:UIAlertActionStyleDefault title:@"⚡ Отправить сигнал пробуждения" handler:^(UIAlertAction *a) {
+    [ac addAction:[UIAlertAction actionWithTitle:@"⚡ Отправить сигнал пробуждения" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         extern void dm_wake_deadlock(void);
         dm_wake_deadlock();
         UINotificationFeedbackGenerator *gen = [UINotificationFeedbackGenerator new];
         [gen notificationOccurred:UINotificationFeedbackTypeSuccess];
     }]];
 
-    [ac addAction:[UIAlertAction actionWithStyle:UIAlertActionStyleDefault title:@"🎮 Изменить раскладку" handler:^(UIAlertAction *a) {
+    [ac addAction:[UIAlertAction actionWithTitle:@"🎮 Изменить раскладку" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         extern void dm_show_controls_editor(void *);
         dm_show_controls_editor((__bridge void *)vc);
     }]];
 
-    [ac addAction:[UIAlertAction actionWithStyle:UIAlertActionStyleDestructive title:@"🚪 Выйти из игры" handler:^(UIAlertAction *a) {
+    [ac addAction:[UIAlertAction actionWithTitle:@"🚪 Выйти из игры" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a) {
         extern void dm_host_shutdown(const char *);
         dm_host_shutdown("user requested exit");
     }]];
 
-    [ac addAction:[UIAlertAction actionWithStyle:UIAlertActionStyleCancel title:@"Отмена" handler:nil]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Отмена" style:UIAlertActionStyleCancel handler:nil]];
 
     if (ac.popoverPresentationController) {
         ac.popoverPresentationController.sourceView = self;
@@ -651,7 +655,7 @@ static void placeLabel(CATextLayer *t, CGPoint c, CGFloat fs) {
 
 - (void)layoutSubviews {
     [super layoutSubviews];
-    load_custom_controls();
+    load_custom_controls(_full);
     CGFloat u = self.u;
     [CATransaction begin]; [CATransaction setDisableActions:YES];
     _controls.frame = self.layer.bounds;

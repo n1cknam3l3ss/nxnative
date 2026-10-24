@@ -38,15 +38,14 @@ public struct ControlButtonConfig: Codable, Identifiable, Equatable {
 }
 
 public final class ControlsLayoutStore {
-    public static let defaultsKey = "DmControlsLayout_v1"
+    public static let key2D = "DmControlsLayout_2D"
+    public static let key3D = "DmControlsLayout_3D"
     public static let shared = ControlsLayoutStore()
 
-    public static func defaultLayout() -> [ControlButtonConfig] {
-        return [
+    public static func defaultLayout(is3D: Bool) -> [ControlButtonConfig] {
+        var list: [ControlButtonConfig] = [
             // Left Stick (matching DmGamepad K_STICK_X, K_PAD_Y, K_STICK_R)
             ControlButtonConfig(id: "STICK", name: "", x: 0.087, y: 0.81, scale: 1.0, opacity: 1.0, isStick: true, baseWidth: 154, baseHeight: 154),
-            // D-Pad (matching DmGamepad K_LOW_X, K_LOW_Y, K_DPAD_R)
-            ControlButtonConfig(id: "DPAD", name: "D-Pad", x: 0.248, y: 0.85, scale: 1.0, opacity: 1.0, isDpad: true, baseWidth: 96, baseHeight: 96),
             // Face Diamond: A, B, X, Y (matching DmGamepad K_FACE_X, K_PAD_Y, K_FACE_GAP, K_FACE_R)
             ControlButtonConfig(id: "A", name: "A", x: 0.967, y: 0.81, scale: 1.0, opacity: 1.0, baseWidth: 54, baseHeight: 54),
             ControlButtonConfig(id: "B", name: "B", x: 0.913, y: 0.925, scale: 1.0, opacity: 1.0, baseWidth: 54, baseHeight: 54),
@@ -59,39 +58,51 @@ public final class ControlsLayoutStore {
             ControlButtonConfig(id: "R", name: "R", x: 0.953, y: 0.251, scale: 1.0, opacity: 1.0, baseWidth: 48, baseHeight: 48),
             // Center pills: + and − (matching DmGamepad K_PILL_DX, K_PILL_Y, K_PILL_W, K_PILL_H)
             ControlButtonConfig(id: "PLUS", name: "+", x: 0.556, y: 0.051, scale: 1.0, opacity: 1.0, baseWidth: 50, baseHeight: 28),
-            ControlButtonConfig(id: "MINUS", name: "−", x: 0.444, y: 0.051, scale: 1.0, opacity: 1.0, baseWidth: 50, baseHeight: 28),
-            // Stick Clicks: L3 and R3
-            ControlButtonConfig(id: "L3", name: "L3", x: 0.110, y: 0.093, scale: 1.0, opacity: 1.0, baseWidth: 34, baseHeight: 34),
-            ControlButtonConfig(id: "R3", name: "R3", x: 0.890, y: 0.093, scale: 1.0, opacity: 1.0, baseWidth: 34, baseHeight: 34)
+            ControlButtonConfig(id: "MINUS", name: "−", x: 0.444, y: 0.051, scale: 1.0, opacity: 1.0, baseWidth: 50, baseHeight: 28)
         ]
+        if is3D {
+            // 3D mode adds D-Pad and L3/R3
+            list.append(ControlButtonConfig(id: "DPAD", name: "D-Pad", x: 0.248, y: 0.85, scale: 1.0, opacity: 1.0, isDpad: true, baseWidth: 96, baseHeight: 96))
+            list.append(ControlButtonConfig(id: "L3", name: "L3", x: 0.110, y: 0.093, scale: 1.0, opacity: 1.0, baseWidth: 34, baseHeight: 34))
+            list.append(ControlButtonConfig(id: "R3", name: "R3", x: 0.890, y: 0.093, scale: 1.0, opacity: 1.0, baseWidth: 34, baseHeight: 34))
+        }
+        return list
     }
 
-    public static func loadLayout() -> [ControlButtonConfig] {
-        if let data = UserDefaults.standard.data(forKey: defaultsKey),
+    public static func loadLayout(is3D: Bool) -> [ControlButtonConfig] {
+        let key = is3D ? key3D : key2D
+        if let data = UserDefaults.standard.data(forKey: key),
            let list = try? JSONDecoder().decode([ControlButtonConfig].self, from: data), !list.isEmpty {
             return list
         }
-        // Fallback to Documents/controls.json if present
-        if let docUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("controls.json"),
+        let fn = is3D ? "controls_3d.json" : "controls_2d.json"
+        if let docUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(fn),
            let data = try? Data(contentsOf: docUrl),
            let list = try? JSONDecoder().decode([ControlButtonConfig].self, from: data), !list.isEmpty {
             return list
         }
-        return defaultLayout()
+        if !is3D, let data = UserDefaults.standard.data(forKey: "DmControlsLayout_v1"),
+           let list = try? JSONDecoder().decode([ControlButtonConfig].self, from: data), !list.isEmpty {
+            return list
+        }
+        return defaultLayout(is3D: is3D)
     }
 
-    public static func saveLayout(_ items: [ControlButtonConfig]) {
+    public static func saveLayout(_ items: [ControlButtonConfig], is3D: Bool) {
+        let key = is3D ? key3D : key2D
         guard let data = try? JSONEncoder().encode(items) else { return }
-        UserDefaults.standard.set(data, forKey: defaultsKey)
-        // Also save to Documents/controls.json for backup / user editing
-        if let docUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("controls.json") {
+        UserDefaults.standard.set(data, forKey: key)
+        let fn = is3D ? "controls_3d.json" : "controls_2d.json"
+        if let docUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(fn) {
             try? data.write(to: docUrl)
         }
     }
 
-    public static func resetLayout() {
-        UserDefaults.standard.removeObject(forKey: defaultsKey)
-        if let docUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("controls.json") {
+    public static func resetLayout(is3D: Bool) {
+        let key = is3D ? key3D : key2D
+        UserDefaults.standard.removeObject(forKey: key)
+        let fn = is3D ? "controls_3d.json" : "controls_2d.json"
+        if let docUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(fn) {
             try? FileManager.default.removeItem(at: docUrl)
         }
     }
@@ -99,6 +110,7 @@ public final class ControlsLayoutStore {
 
 public struct ControlsEditorView: View {
     @Environment(\.dismiss) private var dismiss
+    @State private var is3DMode: Bool = false
     @State private var items: [ControlButtonConfig] = []
     @State private var originalItems: [ControlButtonConfig] = []
     @State private var selectedId: String? = nil
@@ -152,7 +164,7 @@ public struct ControlsEditorView: View {
                     }
                 }
 
-                // 3. Top Toolbar: appears when a button is selected or shows navigation buttons
+                // 3. Top Toolbar: appears when a button is selected or shows mode switch + actions
                 VStack {
                     topToolbar
                         .padding(.top, 8)
@@ -185,19 +197,17 @@ public struct ControlsEditorView: View {
                 }
             }
             .onAppear {
-                let loaded = ControlsLayoutStore.loadLayout()
-                items = loaded
-                originalItems = loaded
+                loadCurrentMode()
             }
             // Context Dialog for Background Long Press
-            .confirmationDialog("Действия редактора", isPresented: $showBgMenu, titleVisibility: .visible) {
+            .confirmationDialog("Действия редактора (\(is3DMode ? "3D" : "2D"))", isPresented: $showBgMenu, titleVisibility: .visible) {
                 Button("➕ Добавить кнопку") {
                     showAddPicker = true
                 }
                 Button("💾 Сохранить изменения") {
                     saveChanges()
                 }
-                Button("↺ Вернуть начальные", role: .destructive) {
+                Button("↺ Вернуть начальные для \(is3DMode ? "3D" : "2D")", role: .destructive) {
                     resetToDefault()
                 }
                 Button("🚪 Выйти из редактора", role: .cancel) {
@@ -224,7 +234,7 @@ public struct ControlsEditorView: View {
                 }
                 Button("Отмена", role: .cancel) {}
             } message: {
-                Text("Вы внесли изменения в раскладку управления. Сохранить их перед выходом?")
+                Text("Вы внесли изменения в раскладку управления (\(is3DMode ? "3D" : "2D")). Сохранить их перед выходом?")
             }
         }
     }
@@ -450,8 +460,36 @@ public struct ControlsEditorView: View {
             .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 1))
             .shadow(color: .black.opacity(0.5), radius: 6, y: 2)
         } else {
-            // Main menu toolbar when no button is selected
+            // Main menu toolbar: 2D/3D Mode Switcher + Actions
             HStack(spacing: 12) {
+                // 2D vs 3D Layout Switcher
+                HStack(spacing: 0) {
+                    Button(action: { switchMode(is3D: false) }) {
+                        Text("2D Режим")
+                            .font(.subheadline.weight(!is3DMode ? .bold : .regular))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(!is3DMode ? Color.blue : Color.clear)
+                            .foregroundColor(!is3DMode ? .white : .white.opacity(0.6))
+                            .clipShape(Capsule())
+                    }
+                    Button(action: { switchMode(is3D: true) }) {
+                        Text("3D Режим")
+                            .font(.subheadline.weight(is3DMode ? .bold : .regular))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(is3DMode ? Color.blue : Color.clear)
+                            .foregroundColor(is3DMode ? .white : .white.opacity(0.6))
+                            .clipShape(Capsule())
+                    }
+                }
+                .padding(3)
+                .background(Color.white.opacity(0.12).clipShape(Capsule()))
+
+                Divider()
+                    .frame(height: 20)
+                    .background(Color.white.opacity(0.25))
+
                 Button(action: { showBgMenu = true }) {
                     Label("Меню", systemImage: "ellipsis.circle")
                         .font(.callout.weight(.medium))
@@ -473,14 +511,32 @@ public struct ControlsEditorView: View {
                 .buttonStyle(.bordered)
                 .tint(.secondary)
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 12)
             .padding(.vertical, 5)
-            .background(Color.black.opacity(0.65).clipShape(Capsule()))
+            .background(Color.black.opacity(0.70).clipShape(Capsule()))
             .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
         }
     }
 
     // MARK: - Actions
+    private func loadCurrentMode() {
+        let loaded = ControlsLayoutStore.loadLayout(is3D: is3DMode)
+        items = loaded
+        originalItems = loaded
+        selectedId = nil
+        hasChanges = false
+    }
+
+    private func switchMode(is3D: Bool) {
+        if is3D == is3DMode { return }
+        if hasChanges {
+            ControlsLayoutStore.saveLayout(items, is3D: is3DMode)
+        }
+        is3DMode = is3D
+        loadCurrentMode()
+        showToastMessage("Редактирование: \(is3D ? "3D" : "2D") раскладка")
+    }
+
     private func remapButton(_ id: String, to newMapping: String, name: String) {
         if let idx = items.firstIndex(where: { $0.id == id }) {
             items[idx].mapping = newMapping
@@ -533,23 +589,23 @@ public struct ControlsEditorView: View {
     }
 
     private func saveChanges() {
-        ControlsLayoutStore.saveLayout(items)
+        ControlsLayoutStore.saveLayout(items, is3D: is3DMode)
         originalItems = items
         hasChanges = false
         let gen = UINotificationFeedbackGenerator()
         gen.notificationOccurred(.success)
-        showToastMessage("Раскладка сохранена!")
+        showToastMessage("Раскладка (\(is3DMode ? "3D" : "2D")) сохранена!")
     }
 
     private func resetToDefault() {
-        items = ControlsLayoutStore.defaultLayout()
-        ControlsLayoutStore.resetLayout()
+        items = ControlsLayoutStore.defaultLayout(is3D: is3DMode)
+        ControlsLayoutStore.resetLayout(is3D: is3DMode)
         originalItems = items
         hasChanges = false
         selectedId = nil
         let gen = UINotificationFeedbackGenerator()
         gen.notificationOccurred(.warning)
-        showToastMessage("Сброшено к начальным настройкам")
+        showToastMessage("Сброшено к начальным для \(is3DMode ? "3D" : "2D")")
     }
 
     private func requestExit() {
