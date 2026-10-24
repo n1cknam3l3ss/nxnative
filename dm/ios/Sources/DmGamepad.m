@@ -210,7 +210,7 @@ static __weak DmGamepad *g_view;
     NSMapTable<UITouch *, NSNumber *> *_owner;     // touch → control (with the key for C_BTN or the stick for C_STICK, << 8)
     UITouch *_stick[2]; CGPoint _stickNow[2];      // the touch holding each stick and where it is now (0 left, 1 right)
     CGPoint _rCentre;                              // the right stick's centre: where its touch landed, dragged along past K_RSTICK_R
-    uint64_t _faceBits, _dpadBits, _btnBits;
+    uint64_t _faceBits, _dpadBits, _btnBits, _lastRenderedBtn;
     NSMapTable<UITouch *, NSNumber *> *_faceOf;    // which keys each touch on the diamond currently holds
     CAShapeLayer *_key[B_N]; CATextLayer *_label[B_N];   // one layer per key
     CAShapeLayer *_ring, *_knob;                   // the left stick (the right one is not drawn)
@@ -281,15 +281,15 @@ static BOOL fullOnly(int b) { return b == B_LS || b == B_RS || b >= B_LEFT; }   
     load_custom_controls();
     [CATransaction begin]; [CATransaction setDisableActions:YES];
     for (int b = 0; b < B_N; b++) {
-        BOOL hide = _tap || (fullOnly(b) && !_full) || (g_custom_btns[b].has_custom && g_custom_btns[b].is_hidden);
+        BOOL hide = _tap || (g_custom_btns[b].has_custom ? g_custom_btns[b].is_hidden : (fullOnly(b) && !_full));
         _key[b].hidden = hide;
         if (g_custom_btns[b].has_custom) _key[b].opacity = g_custom_btns[b].opacity;
     }
-    BOOL hideStick = _tap || (g_custom_stick.has_custom && g_custom_stick.is_hidden);
+    BOOL hideStick = _tap || (g_custom_stick.has_custom ? g_custom_stick.is_hidden : NO);
     _ring.hidden = _knob.hidden = hideStick;
     if (g_custom_stick.has_custom) _ring.opacity = _knob.opacity = g_custom_stick.opacity;
 
-    BOOL hideDpad = _tap || !_full || (g_custom_dpad.has_custom && g_custom_dpad.is_hidden);
+    BOOL hideDpad = _tap || (g_custom_dpad.has_custom ? g_custom_dpad.is_hidden : !_full);
     for (int i = B_LEFT; i <= B_DOWN; i++) if (hideDpad) _key[i].hidden = YES;
 
     _swapLabel.string = _tap ? @"Tap" : _full ? @"3D" : @"2D";
@@ -444,13 +444,14 @@ static CGFloat dist(CGPoint a, CGPoint b) { return hypot(a.x - b.x, a.y - b.y); 
         ax[i * 2] = (int32_t)lrint(o.x * m * 32767); ax[i * 2 + 1] = (int32_t)lrint(-o.y * m * 32767);   // host: up is positive; rounded so full tilt is exactly 32767
     }
     uint64_t all_btn = face | dpad | btn | g_toggle_active;
-    BOOL changed = all_btn != (_faceBits | _dpadBits | _btnBits) || swap != _swapHeld;
-    uint64_t pressed = all_btn & ~(_faceBits | _dpadBits | _btnBits);
+    BOOL changed = (all_btn != _lastRenderedBtn) || (swap != _swapHeld);
+    uint64_t pressed = all_btn & ~_lastRenderedBtn;
     unsigned gripping = (_stick[0] ? 1u : 0) | (_stick[1] ? 2u : 0);
     if (pressed || (swap && !_swapHeld) || (gripping & ~_hapticSticks)) {
         [_touchFeedback impactOccurredWithIntensity:0.6]; [_touchFeedback prepare];
     }
     _hapticSticks = gripping;
+    _lastRenderedBtn = all_btn;
     _faceBits = face; _dpadBits = dpad; _btnBits = btn; _swapHeld = swap;
     pthread_mutex_lock(&g_mu);
     g_touch_btn = all_btn; g_touch_lx = ax[0]; g_touch_ly = ax[1]; g_touch_rx = ax[2]; g_touch_ry = ax[3];

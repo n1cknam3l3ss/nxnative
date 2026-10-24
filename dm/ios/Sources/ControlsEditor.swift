@@ -20,7 +20,7 @@ public struct ControlButtonConfig: Codable, Identifiable, Equatable {
     public var baseWidth: CGFloat
     public var baseHeight: CGFloat
 
-    public init(id: String, name: String, x: CGFloat, y: CGFloat, scale: CGFloat = 1.0, opacity: CGFloat = 1.0, isToggle: Bool = false, isHidden: Bool = false, mapping: String? = nil, isStick: Bool = false, isDpad: Bool = false, baseWidth: CGFloat = 56, baseHeight: CGFloat = 56) {
+    public init(id: String, name: String, x: CGFloat, y: CGFloat, scale: CGFloat = 1.0, opacity: CGFloat = 1.0, isToggle: Bool = false, isHidden: Bool = false, mapping: String? = nil, isStick: Bool = false, isDpad: Bool = false, baseWidth: CGFloat = 54, baseHeight: CGFloat = 54) {
         self.id = id
         self.name = name
         self.x = x
@@ -43,26 +43,26 @@ public final class ControlsLayoutStore {
 
     public static func defaultLayout() -> [ControlButtonConfig] {
         return [
-            // Left Stick
-            ControlButtonConfig(id: "STICK", name: "L-Стик", x: 0.12, y: 0.78, scale: 1.0, opacity: 1.0, isStick: true, baseWidth: 140, baseHeight: 140),
-            // D-Pad
-            ControlButtonConfig(id: "DPAD", name: "D-Pad", x: 0.28, y: 0.82, scale: 1.0, opacity: 1.0, isDpad: true, baseWidth: 120, baseHeight: 120),
-            // Face Diamond: A, B, X, Y
-            ControlButtonConfig(id: "A", name: "A", x: 0.94, y: 0.78, scale: 1.0, opacity: 1.0, baseWidth: 56, baseHeight: 56),
-            ControlButtonConfig(id: "B", name: "B", x: 0.88, y: 0.90, scale: 1.0, opacity: 1.0, baseWidth: 56, baseHeight: 56),
-            ControlButtonConfig(id: "X", name: "X", x: 0.88, y: 0.66, scale: 1.0, opacity: 1.0, baseWidth: 56, baseHeight: 56),
-            ControlButtonConfig(id: "Y", name: "Y", x: 0.82, y: 0.78, scale: 1.0, opacity: 1.0, baseWidth: 56, baseHeight: 56),
-            // Shoulders: ZL / L on left, ZR / R on right
-            ControlButtonConfig(id: "ZL", name: "ZL", x: 0.08, y: 0.14, scale: 1.0, opacity: 1.0, isToggle: true, baseWidth: 62, baseHeight: 50),
-            ControlButtonConfig(id: "L", name: "L", x: 0.08, y: 0.32, scale: 1.0, opacity: 1.0, baseWidth: 62, baseHeight: 50),
-            ControlButtonConfig(id: "ZR", name: "ZR", x: 0.92, y: 0.14, scale: 1.0, opacity: 1.0, baseWidth: 62, baseHeight: 50),
-            ControlButtonConfig(id: "R", name: "R", x: 0.92, y: 0.32, scale: 1.0, opacity: 1.0, baseWidth: 62, baseHeight: 50),
-            // Center pills: + and −
-            ControlButtonConfig(id: "PLUS", name: "+", x: 0.56, y: 0.09, scale: 1.0, opacity: 1.0, baseWidth: 50, baseHeight: 32),
-            ControlButtonConfig(id: "MINUS", name: "−", x: 0.44, y: 0.09, scale: 1.0, opacity: 1.0, baseWidth: 50, baseHeight: 32),
+            // Left Stick (matching DmGamepad K_STICK_X, K_PAD_Y, K_STICK_R)
+            ControlButtonConfig(id: "STICK", name: "", x: 0.087, y: 0.81, scale: 1.0, opacity: 1.0, isStick: true, baseWidth: 154, baseHeight: 154),
+            // D-Pad (matching DmGamepad K_LOW_X, K_LOW_Y, K_DPAD_R)
+            ControlButtonConfig(id: "DPAD", name: "D-Pad", x: 0.248, y: 0.85, scale: 1.0, opacity: 1.0, isDpad: true, baseWidth: 96, baseHeight: 96),
+            // Face Diamond: A, B, X, Y (matching DmGamepad K_FACE_X, K_PAD_Y, K_FACE_GAP, K_FACE_R)
+            ControlButtonConfig(id: "A", name: "A", x: 0.967, y: 0.81, scale: 1.0, opacity: 1.0, baseWidth: 54, baseHeight: 54),
+            ControlButtonConfig(id: "B", name: "B", x: 0.913, y: 0.925, scale: 1.0, opacity: 1.0, baseWidth: 54, baseHeight: 54),
+            ControlButtonConfig(id: "X", name: "X", x: 0.913, y: 0.693, scale: 1.0, opacity: 1.0, baseWidth: 54, baseHeight: 54),
+            ControlButtonConfig(id: "Y", name: "Y", x: 0.860, y: 0.81, scale: 1.0, opacity: 1.0, baseWidth: 54, baseHeight: 54),
+            // Shoulders: ZL / L on left, ZR / R on right (matching DmGamepad K_ZL_X, K_ZL_Y, K_L_Y)
+            ControlButtonConfig(id: "ZL", name: "ZL", x: 0.047, y: 0.093, scale: 1.0, opacity: 1.0, isToggle: true, baseWidth: 52, baseHeight: 52),
+            ControlButtonConfig(id: "L", name: "L", x: 0.047, y: 0.251, scale: 1.0, opacity: 1.0, baseWidth: 48, baseHeight: 48),
+            ControlButtonConfig(id: "ZR", name: "ZR", x: 0.953, y: 0.093, scale: 1.0, opacity: 1.0, baseWidth: 52, baseHeight: 52),
+            ControlButtonConfig(id: "R", name: "R", x: 0.953, y: 0.251, scale: 1.0, opacity: 1.0, baseWidth: 48, baseHeight: 48),
+            // Center pills: + and − (matching DmGamepad K_PILL_DX, K_PILL_Y, K_PILL_W, K_PILL_H)
+            ControlButtonConfig(id: "PLUS", name: "+", x: 0.556, y: 0.051, scale: 1.0, opacity: 1.0, baseWidth: 50, baseHeight: 28),
+            ControlButtonConfig(id: "MINUS", name: "−", x: 0.444, y: 0.051, scale: 1.0, opacity: 1.0, baseWidth: 50, baseHeight: 28),
             // Stick Clicks: L3 and R3
-            ControlButtonConfig(id: "L3", name: "L3", x: 0.16, y: 0.14, scale: 1.0, opacity: 1.0, baseWidth: 44, baseHeight: 44),
-            ControlButtonConfig(id: "R3", name: "R3", x: 0.84, y: 0.14, scale: 1.0, opacity: 1.0, baseWidth: 44, baseHeight: 44)
+            ControlButtonConfig(id: "L3", name: "L3", x: 0.110, y: 0.093, scale: 1.0, opacity: 1.0, baseWidth: 34, baseHeight: 34),
+            ControlButtonConfig(id: "R3", name: "R3", x: 0.890, y: 0.093, scale: 1.0, opacity: 1.0, baseWidth: 34, baseHeight: 34)
         ]
     }
 
@@ -109,7 +109,6 @@ public struct ControlsEditorView: View {
     @State private var showBgMenu: Bool = false
     @State private var showAddPicker: Bool = false
     @State private var showToast: String? = nil
-    @State private var longPressLocation: CGPoint = .zero
 
     private let availableSwitchButtons = [
         ("A", "Кнопка A"),
@@ -140,7 +139,7 @@ public struct ControlsEditorView: View {
                     .onTapGesture {
                         selectedId = nil
                     }
-                    .onLongPressGesture(minimumDuration: 0.6, perform: {
+                    .onLongPressGesture(minimumDuration: 0.5, perform: {
                         let generator = UIImpactFeedbackGenerator(style: .medium)
                         generator.impactOccurred()
                         showBgMenu = true
@@ -153,18 +152,18 @@ public struct ControlsEditorView: View {
                     }
                 }
 
-                // 3. Top Toolbar: appears when a button is selected or shows helpful hint
+                // 3. Top Toolbar: appears when a button is selected or shows navigation buttons
                 VStack {
                     topToolbar
-                        .padding(.top, 14)
+                        .padding(.top, 8)
                     Spacer()
                 }
 
                 // 4. Subtle Hint at bottom
                 VStack {
                     Spacer()
-                    Text("Тап — выбор кнопки • Долгий тап по кнопке — меню • Долгий тап по фону — главное меню")
-                        .font(.caption2)
+                    Text("Тап — выбор • Зажмите кнопку — меню • Зажмите фон — главное меню")
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundColor(Color.white.opacity(0.35))
                         .padding(.bottom, 6)
                 }
@@ -180,7 +179,7 @@ public struct ControlsEditorView: View {
                             .padding(.vertical, 10)
                             .background(Color.black.opacity(0.85).clipShape(Capsule()))
                             .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 1))
-                            .padding(.bottom, 40)
+                            .padding(.bottom, 36)
                             .transition(.opacity.combined(with: .scale))
                     }
                 }
@@ -230,7 +229,7 @@ public struct ControlsEditorView: View {
         }
     }
 
-    // MARK: - Control Item Rendering
+    // MARK: - Control Item Rendering (Matches in-game CAShapeLayer appearance 1:1)
     @ViewBuilder
     private func renderControlItem(_ item: ControlButtonConfig, in geo: GeometryProxy) -> some View {
         let isSelected = selectedId == item.id
@@ -241,63 +240,66 @@ public struct ControlsEditorView: View {
 
         ZStack {
             if item.isStick {
-                // Analog Stick representation
+                // In-game Left Stick: large outer ring + knob with inner concentric circle
                 Circle()
-                    .stroke(Color.white.opacity(0.4), lineWidth: 2)
-                    .background(Circle().fill(Color.white.opacity(0.08)))
+                    .fill(Color.white.opacity(0.06))
                     .frame(width: currentWidth, height: currentHeight)
+                    .overlay(Circle().stroke(Color.white.opacity(0.38), lineWidth: 1.5))
                 Circle()
-                    .fill(Color.white.opacity(0.2))
-                    .frame(width: currentWidth * 0.42, height: currentHeight * 0.42)
-                Text("L")
-                    .font(.system(size: 16 * item.scale, weight: .bold))
-                    .foregroundColor(Color.white.opacity(0.6))
+                    .fill(Color.white.opacity(0.14))
+                    .frame(width: currentWidth * 0.39, height: currentHeight * 0.39)
+                    .overlay(Circle().stroke(Color.white.opacity(0.38), lineWidth: 1.5))
+                    .overlay(Circle().stroke(Color.white.opacity(0.38), lineWidth: 1.5).scaleEffect(0.62))
             } else if item.isDpad {
-                // D-Pad Cross representation
+                // In-game D-Pad Cross
                 ZStack {
                     RoundedRectangle(cornerRadius: 6 * item.scale)
-                        .fill(Color.white.opacity(0.12))
+                        .fill(Color.white.opacity(0.14))
                         .frame(width: currentWidth, height: currentHeight * 0.35)
+                        .overlay(RoundedRectangle(cornerRadius: 6 * item.scale).stroke(Color.white.opacity(0.38), lineWidth: 1.5))
                     RoundedRectangle(cornerRadius: 6 * item.scale)
-                        .fill(Color.white.opacity(0.12))
+                        .fill(Color.white.opacity(0.14))
                         .frame(width: currentWidth * 0.35, height: currentHeight)
-                    RoundedRectangle(cornerRadius: 6 * item.scale)
-                        .stroke(Color.white.opacity(0.35), lineWidth: 1.5)
-                        .frame(width: currentWidth, height: currentHeight * 0.35)
-                    RoundedRectangle(cornerRadius: 6 * item.scale)
-                        .stroke(Color.white.opacity(0.35), lineWidth: 1.5)
-                        .frame(width: currentWidth * 0.35, height: currentHeight)
+                        .overlay(RoundedRectangle(cornerRadius: 6 * item.scale).stroke(Color.white.opacity(0.38), lineWidth: 1.5))
                 }
             } else {
-                // Standard Button (Round or Capsule)
+                // In-game Button: Teardrop (ZL/L/ZR/R), Capsule (+/−), or Circle (ABXY/L3/R3)
                 let isPill = item.id == "PLUS" || item.id == "MINUS"
-                let isShoulder = item.id == "ZL" || item.id == "ZR" || item.id == "L" || item.id == "R"
+                let isLeftDrop = item.id == "ZL" || item.id == "L"
+                let isRightDrop = item.id == "ZR" || item.id == "R"
 
                 if isPill {
                     Capsule()
-                        .fill(Color.white.opacity(0.15))
+                        .fill(Color.white.opacity(0.14))
                         .frame(width: currentWidth, height: currentHeight)
-                        .overlay(Capsule().stroke(Color.white.opacity(0.4), lineWidth: 1.5))
-                } else if isShoulder {
-                    RoundedRectangle(cornerRadius: 14 * item.scale)
-                        .fill(Color.white.opacity(0.15))
+                        .overlay(Capsule().stroke(item.isToggle ? Color.cyan : Color.white.opacity(0.38), lineWidth: item.isToggle ? 1.8 : 1.5))
+                } else if isLeftDrop {
+                    // Teardrop pointing toward top-left corner
+                    UnevenRoundedRectangle(topLeadingRadius: 4 * item.scale, bottomLeadingRadius: 26 * item.scale, bottomTrailingRadius: 26 * item.scale, topTrailingRadius: 26 * item.scale)
+                        .fill(Color.white.opacity(0.14))
                         .frame(width: currentWidth, height: currentHeight)
-                        .overlay(RoundedRectangle(cornerRadius: 14 * item.scale).stroke(Color.white.opacity(0.4), lineWidth: 1.5))
+                        .overlay(UnevenRoundedRectangle(topLeadingRadius: 4 * item.scale, bottomLeadingRadius: 26 * item.scale, bottomTrailingRadius: 26 * item.scale, topTrailingRadius: 26 * item.scale).stroke(item.isToggle ? Color.cyan : Color.white.opacity(0.38), lineWidth: item.isToggle ? 2.0 : 1.5))
+                } else if isRightDrop {
+                    // Teardrop pointing toward top-right corner
+                    UnevenRoundedRectangle(topLeadingRadius: 26 * item.scale, bottomLeadingRadius: 26 * item.scale, bottomTrailingRadius: 26 * item.scale, topTrailingRadius: 4 * item.scale)
+                        .fill(Color.white.opacity(0.14))
+                        .frame(width: currentWidth, height: currentHeight)
+                        .overlay(UnevenRoundedRectangle(topLeadingRadius: 26 * item.scale, bottomLeadingRadius: 26 * item.scale, bottomTrailingRadius: 26 * item.scale, topTrailingRadius: 4 * item.scale).stroke(item.isToggle ? Color.cyan : Color.white.opacity(0.38), lineWidth: item.isToggle ? 2.0 : 1.5))
                 } else {
                     Circle()
-                        .fill(Color.white.opacity(0.15))
+                        .fill(Color.white.opacity(0.14))
                         .frame(width: currentWidth, height: currentHeight)
-                        .overlay(Circle().stroke(Color.white.opacity(0.4), lineWidth: 1.5))
+                        .overlay(Circle().stroke(item.isToggle ? Color.cyan : Color.white.opacity(0.38), lineWidth: item.isToggle ? 1.8 : 1.5))
                 }
 
-                VStack(spacing: 1) {
+                VStack(spacing: 0) {
                     Text(item.name)
                         .font(.system(size: (item.baseHeight * 0.36) * item.scale, weight: .bold))
                         .foregroundColor(Color.white.opacity(0.85))
 
                     if item.isToggle {
                         Text("[T]")
-                            .font(.system(size: 9 * item.scale, weight: .black))
+                            .font(.system(size: 8 * item.scale, weight: .black))
                             .foregroundColor(Color.cyan)
                     }
                 }
@@ -307,7 +309,7 @@ public struct ControlsEditorView: View {
             if isSelected {
                 Rectangle()
                     .stroke(Color.cyan, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-                    .frame(width: currentWidth + 14, height: currentHeight + 14)
+                    .frame(width: currentWidth + 12, height: currentHeight + 12)
             }
         }
         .opacity(Double(item.opacity))
@@ -320,8 +322,8 @@ public struct ControlsEditorView: View {
                         selectedId = item.id
                     }
                     if let idx = items.firstIndex(where: { $0.id == item.id }) {
-                        let newNormX = max(0.04, min(0.96, val.location.x / geo.size.width))
-                        let newNormY = max(0.05, min(0.95, val.location.y / geo.size.height))
+                        let newNormX = max(0.03, min(0.97, val.location.x / geo.size.width))
+                        let newNormY = max(0.04, min(0.96, val.location.y / geo.size.height))
                         items[idx].x = newNormX
                         items[idx].y = newNormY
                         hasChanges = true
@@ -372,15 +374,15 @@ public struct ControlsEditorView: View {
     private var topToolbar: some View {
         if let selId = selectedId, let idx = items.firstIndex(where: { $0.id == selId }) {
             let item = items[idx]
-            HStack(spacing: 16) {
+            HStack(spacing: 14) {
                 // Button identifier badge
-                Text(item.name)
+                Text(item.name.isEmpty ? item.id : item.name)
                     .font(.subheadline.weight(.bold))
                     .foregroundColor(.cyan)
-                    .frame(minWidth: 28)
+                    .frame(minWidth: 26)
 
                 Divider()
-                    .frame(height: 20)
+                    .frame(height: 18)
                     .background(Color.white.opacity(0.3))
 
                 // Size Adjustment: [-] Size: 100% [+]
@@ -398,7 +400,7 @@ public struct ControlsEditorView: View {
                     Text("Размер: \(Int(round(item.scale * 100)))%")
                         .font(.subheadline.weight(.semibold).monospacedDigit())
                         .foregroundColor(.white)
-                        .frame(minWidth: 95, alignment: .center)
+                        .frame(minWidth: 92, alignment: .center)
 
                     Button(action: {
                         let newScale = min(2.0, round((item.scale + 0.05) * 100) / 100)
@@ -412,7 +414,7 @@ public struct ControlsEditorView: View {
                 }
 
                 Divider()
-                    .frame(height: 20)
+                    .frame(height: 18)
                     .background(Color.white.opacity(0.3))
 
                 // Toggle vs Hold Checkbox
@@ -427,28 +429,28 @@ public struct ControlsEditorView: View {
                             .foregroundColor(item.isToggle ? .cyan : .gray)
                         Text(item.isToggle ? "Переключение (Toggle)" : "Зажатие (Hold)")
                             .font(.subheadline.weight(.medium))
-                            .foregroundColor(item.isToggle ? .cyan : .white.opacity(0.8))
+                            .foregroundColor(item.isToggle ? .cyan : .white.opacity(0.85))
                     }
                 }
 
                 Divider()
-                    .frame(height: 20)
+                    .frame(height: 18)
                     .background(Color.white.opacity(0.3))
 
-                // Done with current button
+                // Deselect
                 Button(action: { selectedId = nil }) {
                     Image(systemName: "xmark.circle")
                         .font(.body)
                         .foregroundColor(.white.opacity(0.7))
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
             .background(Color(white: 0.12).opacity(0.92).clipShape(Capsule()))
             .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 1))
             .shadow(color: .black.opacity(0.5), radius: 6, y: 2)
         } else {
-            // General status / action buttons when no button is selected
+            // Main menu toolbar when no button is selected
             HStack(spacing: 12) {
                 Button(action: { showBgMenu = true }) {
                     Label("Меню", systemImage: "ellipsis.circle")
@@ -472,7 +474,7 @@ public struct ControlsEditorView: View {
                 .tint(.secondary)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 6)
+            .padding(.vertical, 5)
             .background(Color.black.opacity(0.65).clipShape(Capsule()))
             .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
         }
@@ -578,4 +580,3 @@ public func dmShowControlsEditor(_ viewController: UnsafeMutableRawPointer) {
     host.modalPresentationStyle = .fullScreen
     parent.present(host, animated: true)
 }
-
