@@ -1,6 +1,7 @@
 // nv:: (the GPU driver glue layer beneath NVN: creates transfer memory, connects to the nvdrv service). NVN has been replaced wholesale with a host null device, so this layer has nothing to do.
 // The allocator callbacks are recorded in the host global g_nv_alloc; the graphics layer takes them from here later when it needs to allocate memory with the game's allocator.
 #include "../host/hle.h"
+#include <string.h>
 
 typedef void *(*nv_alloc_fn)(unsigned long size, unsigned long align, void *user);
 typedef void (*nv_free_fn)(void *p, void *user);
@@ -15,3 +16,14 @@ HLE_FORCE("_ZN2nv28SetGraphicsDevtoolsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_
           void, h_nv_SetDevAlloc, nv_alloc_fn a, nv_free_fn f, nv_realloc_fn r, void *u) { g_nv_devtools_alloc = (struct nv_allocator){a, f, r, u}; }
 HLE_FORCE("_ZN2nv18InitializeGraphicsEPvm", WHY, void, h_nv_Init, void *mem, unsigned long size) { (void)mem; (void)size; }
 HLE_FORCE("_ZN2nv16FinalizeGraphicsEv", WHY, void, h_nv_Fin, void) {}
+HLE_FORCE("_ZN2nv22DumpGraphicsMemoryInfoEv", WHY, void, h_nv_DumpMem, void) { LOG("nv::DumpGraphicsMemoryInfo (no-op)"); }
+HLE_FORCE("_ZN2nv21GetGraphicsMemoryInfoEPNS_10MemoryInfoE", WHY, int, h_nv_GetMemInfo, uint64_t *info) {
+    if (info) {
+        memset(info, 0, 64);
+        info[0] = 512ull << 20; // NV Current Free: 512 MB
+        info[1] = 256ull << 20; // NV Current Largest Allocation Available: 256 MB
+        info[2] = 512ull << 20;
+        info[3] = 256ull << 20; // NV Worst-Case Largest Allocation Available: 256 MB
+    }
+    return 0;
+}
