@@ -71,7 +71,7 @@ static void *event_notify(void *p) {
     for (;;) {
         dispatch_semaphore_wait(a->notify_sem, DISPATCH_TIME_FOREVER);
         if (atomic_exchange_explicit(&a->notify_pending, 0, memory_order_acq_rel) && a->event)
-            hle_signal_system_event(a->event);
+            hle_signal_bound_system_event(a->event);
         atomic_store_explicit(&a->notify_armed, 0, memory_order_release);
         if (!atomic_load_explicit(&a->notify_run, memory_order_acquire)) break;
         if (atomic_load_explicit(&a->notify_pending, memory_order_acquire) &&
