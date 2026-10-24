@@ -129,10 +129,36 @@ def fixups(t, stage):
 def glsl_type(t, refl):
     return refl['types'][t]['name'] if t in refl.get('types', {}) else t
 
+def collect_uniforms(members, base_offset, prefix, refl, bools):
+    f = []
+    for mb in members:
+        name = f'{prefix}{mb["name"]}'
+        offset = base_offset + mb.get('offset', 0)
+        arr = mb.get('array', [])
+        if len(arr) > 1: return f'uniform {name}: arrays of arrays'
+        count = arr[0] if arr else 0
+        stride = mb.get('array_stride', 0)
+        ty = glsl_type(mb['type'], refl)
+        if ty == 'uint' and name in bools: ty = 'bool'
+        if ty in VEC_TYPES:
+            f.append(f'u:{name}={offset}:{ty}:{count}:{stride}')
+        else:
+            sub_t = refl.get('types', {}).get(mb['type']) or refl.get('types', {}).get(str(mb['type']))
+            if sub_t and 'members' in sub_t:
+                sub_f = collect_uniforms(sub_t['members'], offset, f'{name}.', refl, bools)
+                if isinstance(sub_f, str): return sub_f
+                f.extend(sub_f)
+            else:
+                return f'uniform {name}: type {ty} (structs are not implemented)'
+    return f
+
 def translate(src, stage, key, tmp):
     """GLSL → MSL; returns (msl path, table fields) or an error string"""
     g = os.path.join(tmp, f'{key}.{stage}'); spv = g + '.spv'; msl = os.path.join(tmp, f'{key}_{stage[0]}.metal')
-    open(g + '.in', 'wb').write(src)
+    raw = src.decode('utf-8', errors='ignore')
+    if not re.search(r'^[ 	]*#version\b', raw, flags=re.M) and not re.search(r'^[ 	]*precision\b', raw, flags=re.M):
+        raw = 'precision highp float;\n' + raw
+    open(g + '.in' , 'w', encoding='utf-8').write(raw)
     r = subprocess.run(['glslangValidator', '-E', '-S', stage, g + '.in'], capture_output=True, text=True)
     if r.returncode: return 'glslang -E: ' + ' | '.join(l for l in (r.stdout + r.stderr).splitlines() if 'ERROR' in l and 'compilation' not in l)[:400]
     v_idx = r.stdout.find('#version')
@@ -168,13 +194,9 @@ def translate(src, stage, key, tmp):
         t = refl['types'][u['type']]
         if t['name'] != 'gl_DefaultUniformBlock': return f'uniform block {t["name"]} is not the default block'
         f.append(f'b:{u["binding"]}:{u["block_size"]}')
-        for mb in t['members']:
-            arr = mb.get('array', [])
-            if len(arr) > 1: return f'uniform {mb["name"]}: arrays of arrays'
-            ty = glsl_type(mb['type'], refl)
-            if ty == 'uint' and mb['name'] in bools: ty = 'bool'
-            if ty not in VEC_TYPES: return f'uniform {mb["name"]}: type {ty} (structs are not implemented)'
-            f.append(f'u:{mb["name"]}={mb["offset"]}:{ty}:{arr[0] if arr else 0}:{mb.get("array_stride", 0)}')
+        u_res = collect_uniforms(t['members'], 0, '', refl, bools)
+        if isinstance(u_res, str): return u_res
+        f.extend(u_res)
     for t in refl.get('textures', []):
         if t.get('array'): return f'sampler array {t["name"]}'
         f.append(f't:{t["name"]}={t["binding"]}:{t["type"]}')
