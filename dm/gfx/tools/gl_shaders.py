@@ -84,7 +84,7 @@ def call_args(t, i):
         elif c == ',' and depth == 1: args.append(t[start:k]); start = k + 1
     raise ValueError('unbalanced parentheses')
 
-def fixups(t):
+def fixups(t, stage):
     for a, b in OLD_TEX: t = re.sub(a, b, t)
     t = re.sub(r'^[ \t]*out\s+(?:highp\s+|mediump\s+|lowp\s+)?vec4\s+gl_Position\s*;', '', t, flags=re.M)
     out, i = [], 0
@@ -94,7 +94,37 @@ def fixups(t):
         if len(args) == 3 and re.search(r'[A-Za-z_]\w*', re.sub(r'\b[iu]?vec[234]\b', '', args[2])):   # an offset with a variable in it
             s_, p_, o_ = (x.strip() for x in args)
             out.append(t[i:m.start()] + f'texture({s_}, ({p_}) + vec2({o_}) / vec2(textureSize({s_}, 0)))'); i = end
-    return ''.join(out) + t[i:]
+    t = ''.join(out) + t[i:]
+
+    # ESSL < 310 or unversioned GLSL upgrade: SPIR-V via glslang requires #version 310 es or higher
+    m_ver = re.search(r'^[ \t]*#version\s+(\d+)(?:\s+(es))?', t, flags=re.M)
+    ver_num = int(m_ver.group(1)) if m_ver else None
+    is_es = (m_ver.group(2) == 'es' or ver_num == 100) if m_ver else True
+    needs_upgrade = (ver_num is None) or (is_es and ver_num < 310)
+
+    if needs_upgrade:
+        t = re.sub(r'^[ \t]*#version[^\n]*\n', '', t, flags=re.M)
+        if stage == 'vert':
+            t = re.sub(r'\battribute\b', 'in', t)
+            t = re.sub(r'\bvarying\b', 'out', t)
+            has_prec = bool(re.search(r'^[ \t]*precision\s+\w+\s+float\s*;', t, flags=re.M))
+            prec = '' if has_prec else 'precision highp float;\n'
+            t = f'#version 310 es\n{prec}' + t
+        else:
+            t = re.sub(r'\bvarying\b', 'in', t)
+            frag_outs = []
+            if re.search(r'\bgl_FragColor\b', t):
+                t = re.sub(r'\bgl_FragColor\b', 'dm_FragColor', t)
+                frag_outs.append('layout(location = 0) out mediump vec4 dm_FragColor;')
+            frag_data_indices = {int(m.group(1)) for m in re.finditer(r'\bgl_FragData\s*\[\s*(\d+)\s*\]', t)}
+            for idx in sorted(frag_data_indices):
+                t = re.sub(rf'\bgl_FragData\s*\[\s*{idx}\s*\]', f'dm_FragData_{idx}', t)
+                frag_outs.append(f'layout(location = {idx}) out mediump vec4 dm_FragData_{idx};')
+            frag_out_decl = ('\n'.join(frag_outs) + '\n') if frag_outs else ''
+            has_prec = bool(re.search(r'^[ \t]*precision\s+\w+\s+float\s*;', t, flags=re.M))
+            prec = '' if has_prec else 'precision mediump float;\n'
+            t = f'#version 310 es\n{prec}{frag_out_decl}' + t
+    return t
 
 def glsl_type(t, refl):
     return refl['types'][t]['name'] if t in refl.get('types', {}) else t
@@ -105,8 +135,16 @@ def translate(src, stage, key, tmp):
     open(g + '.in', 'wb').write(src)
     r = subprocess.run(['glslangValidator', '-E', '-S', stage, g + '.in'], capture_output=True, text=True)
     if r.returncode: return 'glslang -E: ' + ' | '.join(l for l in (r.stdout + r.stderr).splitlines() if 'ERROR' in l and 'compilation' not in l)[:400]
-    pre = r.stdout[r.stdout.find('#version'):]   # warnings come first
-    open(g, 'w').write(fixups(pre))
+    v_idx = r.stdout.find('#version')
+    if v_idx >= 0:
+        pre = r.stdout[v_idx:]
+    else:
+        lines = r.stdout.splitlines()
+        first_code = 0
+        while first_code < len(lines) and (lines[first_code].startswith('WARNING:') or not lines[first_code].strip()):
+            first_code += 1
+        pre = '\n'.join(lines[first_code:])
+    open(g, 'w').write(fixups(pre, stage))
     r = subprocess.run(['glslangValidator', '-V', '-R', '--aml', '--amb', '-S', stage, g, '-o', spv], capture_output=True, text=True)
     if r.returncode: return 'glslang: ' + ' | '.join(l for l in (r.stdout + r.stderr).splitlines() if 'ERROR' in l and 'compilation' not in l)[:400]
     refl = json.loads(subprocess.run(['spirv-cross', spv, '--reflect'], capture_output=True, text=True, check=True).stdout)

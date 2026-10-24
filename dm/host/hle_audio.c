@@ -305,6 +305,8 @@ HLE_FORCE("_ZN2nn5audio19OpenDefaultAudioOutEPNS0_8AudioOutEPNS_2os11SystemEvent
           Result, h_au_OpenDef, void *g, void *ev, const uint8_t *param) { return au_open_at(g, ev, NULL, param, __builtin_return_address(0)); }
 HLE_FORCE("_ZN2nn5audio19OpenDefaultAudioOutEPNS0_8AudioOutERKNS0_17AudioOutParameterE", "connect to the audout service (default device, no event); same as OpenAudioOut",
           Result, h_au_OpenDef0, void *g, const uint8_t *param) { return au_open_at(g, NULL, NULL, param, __builtin_return_address(0)); }
+HLE_FORCE("_ZN2nn5audio12OpenAudioOutEPNS0_8AudioOutEPKcRKNS0_17AudioOutParameterE", "connect to the audout service (named device, no event); same as OpenAudioOut",
+          Result, h_au_Open0, void *g, const char *name, const uint8_t *param) { return au_open_at(g, NULL, name, param, __builtin_return_address(0)); }
 static Result au_start_at(void *g, void *lr) {
     aout *a = ao(g);
     pthread_mutex_lock(&g_aos_lock);

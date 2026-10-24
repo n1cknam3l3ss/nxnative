@@ -70,3 +70,12 @@ jobs:
           path: |
             input_nsp/*.ipa
             *.ipa
+
+      - name: Upload Debug Logs on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-logs
+          path: |
+            input_nsp/*_build/logs/
+            input_nsp/*_build/extract/*/gl_capture/
