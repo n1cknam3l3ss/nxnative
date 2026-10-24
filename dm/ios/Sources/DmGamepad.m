@@ -214,7 +214,7 @@ static __weak DmGamepad *g_view;
     NSMapTable<UITouch *, NSNumber *> *_faceOf;    // which keys each touch on the diamond currently holds
     CAShapeLayer *_key[B_N]; CATextLayer *_label[B_N];   // one layer per key
     CAShapeLayer *_ring, *_knob;                   // the left stick (the right one is not drawn)
-    CAShapeLayer *_swap; CATextLayer *_swapLabel; BOOL _swapHeld;
+    CAShapeLayer *_swap; CATextLayer *_swapLabel; BOOL _swapHeld; NSTimeInterval _swapDownTime;
     UIImpactFeedbackGenerator *_touchFeedback;       // one short feedback per touch-control press edge
     unsigned _hapticSticks;
     BOOL _stickShown;                              // the left stick was held at the last refresh
@@ -273,21 +273,9 @@ static BOOL fullOnly(int b) { return b == B_LS || b == B_RS || b >= B_LEFT; }   
         [nc addObserver:self selector:@selector(padsChanged) name:GCControllerDidConnectNotification object:nil];
         [nc addObserver:self selector:@selector(padsChanged) name:GCControllerDidDisconnectNotification object:nil];
         [self padsChanged];
-        UILongPressGestureRecognizer *lp = [[UILongPressGestureRecognizer alloc] initWithTarget:self selector:@selector(handleLongPress:)];
-        lp.minimumPressDuration = 1.0;
-        [self addGestureRecognizer:lp];
         motion_start();
     }
     return self;
-}
-- (void)handleLongPress:(UILongPressGestureRecognizer *)g {
-    if (g.state == UIGestureRecognizerStateBegan) {
-        CGPoint p = [g locationInView:self];
-        if ([self inSwap:p] && self.window.rootViewController) {
-            extern void dm_show_controls_editor(void *);
-            dm_show_controls_editor((__bridge void *)self.window.rootViewController);
-        }
-    }
 }
 - (void)applyLayout {   // show / hide the controls for the current layout
     load_custom_controls();
@@ -507,7 +495,7 @@ static CGFloat dist(CGPoint a, CGPoint b) { return hypot(a.x - b.x, a.y - b.y); 
             [_owner setObject:@(C_BTN | (uint64_t)mapped << 8) forKey:t];
             continue;
         }
-        if ([self inSwap:p]) { [_owner setObject:@(C_SWAP) forKey:t]; continue; }
+        if ([self inSwap:p]) { _swapDownTime = [NSDate timeIntervalSinceReferenceDate]; [_owner setObject:@(C_SWAP) forKey:t]; continue; }
         if (_tap) { game |= [self gameBegin:t]; continue; }
         // diamond, D-pad, left stick: take the one with the smallest distance / grab radius, if it is <= 1
         CGFloat best = 1; int kind = C_NONE, idx = 0;
@@ -579,7 +567,14 @@ static CGFloat dist(CGPoint a, CGPoint b) { return hypot(a.x - b.x, a.y - b.y); 
     BOOL swap = NO, game = NO;
     for (UITouch *t in ts) {
         uint64_t v = [_owner objectForKey:t].unsignedLongLongValue;
-        if (ended && (v & 0xff) == C_SWAP && [self inSwap:[t locationInView:self]]) swap = YES;   // layout button: counts only when released on the button
+        if (ended && (v & 0xff) == C_SWAP && [self inSwap:[t locationInView:self]]) {
+            if ([NSDate timeIntervalSinceReferenceDate] - _swapDownTime >= 0.8 && self.window.rootViewController) {
+                extern void dm_show_controls_editor(void *);
+                dm_show_controls_editor((__bridge void *)self.window.rootViewController);
+            } else {
+                swap = YES;
+            }
+        }
         if ((v & 0xff) == C_GAME && (v >> 8) < 16) { _game[v >> 8] = nil; game = YES; }
         [_owner removeObjectForKey:t]; [_faceOf removeObjectForKey:t]; for (int i = 0; i < 2; i++) if (t == _stick[i]) _stick[i] = nil;
     }
