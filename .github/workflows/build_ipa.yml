@@ -98,6 +98,21 @@ jobs:
         run: |
           python3 scripts/build_ipa_from_nsp.py input_nsp -k keys/prod.keys --no-heap-check
 
+      - name: Prepare Release Assets (Split if > 2GB)
+        if: success()
+        run: |
+          for f in input_nsp/*.ipa *.ipa; do
+            [ -f "$f" ] || continue
+            size=$(stat -f%z "$f" 2>/dev/null || stat -c%s "$f" 2>/dev/null)
+            echo "Checking file $f (size: $size bytes)..."
+            if [ "$size" -gt 2000000000 ]; then
+              echo "File $f is larger than 2GB ($size bytes), splitting into 1900MB parts..."
+              split -b 1900M "$f" "${f}.part"
+              rm -f "$f"
+              ls -lh "${f}.part"*
+            fi
+          done
+
       - name: Create GitHub Release with IPA
         if: success()
         uses: softprops/action-gh-release@v2
@@ -106,7 +121,9 @@ jobs:
           name: ${{ github.event.inputs.release_name != '' && github.event.inputs.release_name || format('Build {0}', github.run_number) }}
           files: |
             input_nsp/*.ipa
+            input_nsp/*.ipa.part*
             *.ipa
+            *.ipa.part*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
