@@ -905,7 +905,7 @@ static void bind_uniforms_textures(prog_t *p) {
     E.prog = p->serial;
 }
 // Everything a draw needs; 0 = skip it
-static int draw_setup(void) {
+static int draw_setup(uint32_t max_vert, uint32_t inst) {
     prog_t *p = prog_of(S.prog);
     if (!p || !p->linked) { RED1("draw with no usable program (%u)", S.prog); return 0; }
     if (!pass_ensure()) return 0;
@@ -914,8 +914,12 @@ static int draw_setup(void) {
     for (int i = 0; i < vs->na; i++) {
         int s = vs->a[i].slot; vattr_t *a = &v->a[p->amap[s]];
         if (!a->on) continue;
-        buf_t *b = buf_of(a->buf);
-        if (!b || !b->mb) { RED1("vertex attribute %d reads client memory or a buffer with no data (not implemented)", p->amap[s]); return 0; }
+        if (a->buf) {
+            buf_t *b = buf_of(a->buf);
+            if (!b || !b->mb) { RED1("vertex attribute %d reads buffer %u with no data", p->amap[s], a->buf); return 0; }
+        } else if (!a->off) {
+            RED1("vertex attribute %d reads null client pointer", p->amap[s]); return 0;
+        }
         k.vf[s] = (uint32_t)vfmt_of(a);
         k.stride[s] = a->stride ? a->stride : a->size * vtype_bytes(a->type); k.div[s] = a->div;
         if (!k.vf[s] || (k.stride[s] & 3)) { RED1("vertex attribute %d: type %#x size %d stride %d not mapped", p->amap[s], a->type, a->size, a->stride); return 0; }
@@ -929,8 +933,23 @@ static int draw_setup(void) {
     enc_state();
     for (int i = 0; i < vs->na; i++) {
         int s = vs->a[i].slot, gi = p->amap[s]; vattr_t *a = &v->a[gi];
-        if (a->on) { buf_t *b = buf_of(a->buf); b->use = g_serial; [e setVertexBuffer:b->mb offset:a->off atIndex:30 - s]; }
-        else [e setVertexBytes:S.va[gi] length:16 atIndex:30 - s];
+        if (a->on) {
+            if (a->buf) {
+                buf_t *b = buf_of(a->buf);
+                b->use = g_serial;
+                [e setVertexBuffer:b->mb offset:a->off atIndex:30 - s];
+            } else if (a->off && max_vert > 0) {
+                int stride = a->stride ? a->stride : a->size * vtype_bytes(a->type);
+                uint32_t count_needed = a->div ? ((uint32_t)inst / a->div + 1) : max_vert;
+                size_t bytes = (size_t)count_needed * stride;
+                size_t off;
+                id<MTLBuffer> mb = arena_alloc(bytes + 16, &off);
+                memcpy((uint8_t *)mb.contents + off, (const void *)a->off, bytes);
+                [e setVertexBuffer:mb offset:off atIndex:30 - s];
+            }
+        } else {
+            [e setVertexBytes:S.va[gi] length:16 atIndex:30 - s];
+        }
     }
     bind_uniforms_textures(p);
     g_n_draw++;
@@ -961,7 +980,8 @@ static void draw_arrays(GLenum mode, GLint first, GLsizei count, GLsizei inst) {
     if (count <= 0 || inst <= 0) return;
     @autoreleasepool {
         int conv; MTLPrimitiveType pt = prim_of(mode, &conv);
-        if (conv < 0 || !draw_setup()) return;
+        uint32_t max_vert = (uint32_t)first + (uint32_t)count;
+        if (conv < 0 || !draw_setup(max_vert, (uint32_t)inst)) return;
         if (!conv) { [g_enc drawPrimitives:pt vertexStart:first vertexCount:count instanceCount:inst]; return; }
         size_t off; id<MTLBuffer> b = arena_alloc((size_t)count * 6 * 4 + 16, &off);
         uint32_t n = idx_convert(conv, NULL, count, first, (uint32_t *)((uint8_t *)b.contents + off));
@@ -978,7 +998,13 @@ static void draw_elements(GLenum mode, GLsizei count, GLenum type, const void *i
         uintptr_t io = (uintptr_t)indices; int isz = type == GL_UNSIGNED_INT ? 4 : type == GL_UNSIGNED_SHORT ? 2 : 1;
         const uint8_t *src = eb ? (eb->mb ? (const uint8_t *)eb->mb.contents + io : NULL) : (const uint8_t *)indices;
         if (!src || (eb && io + (size_t)count * isz > eb->size)) { RED1("glDrawElements: indices outside their buffer"); return; }
-        if (!draw_setup()) return;
+        uint32_t max_idx = 0;
+        for (GLsizei i = 0; i < count; i++) {
+            uint32_t idx = isz == 4 ? ((const uint32_t *)src)[i] : isz == 2 ? ((const uint16_t *)src)[i] : src[i];
+            if (idx > max_idx) max_idx = idx;
+        }
+        uint32_t max_vert = max_idx + 1 + (base > 0 ? (uint32_t)base : 0);
+        if (!draw_setup(max_vert, (uint32_t)inst)) return;
         if (!conv && isz > 1 && eb && io % 4 == 0) {   // the game's own index buffer
             eb->use = g_serial;
             [g_enc drawIndexedPrimitives:pt indexCount:count indexType:isz == 4 ? MTLIndexTypeUInt32 : MTLIndexTypeUInt16 indexBuffer:eb->mb indexBufferOffset:io
