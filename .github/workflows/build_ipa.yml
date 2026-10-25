@@ -75,13 +75,13 @@ jobs:
               rm -f input_nsp/game.zip
             else
               echo "Downloading Base NSP: $URL"
-              curl --http1.1 --retry 20 --retry-delay 3 --retry-all-errors -L -C - "$URL" -o "input_nsp/base.nsp"
+              curl --fail --http1.1 --retry 30 --retry-delay 5 --retry-all-errors -L -C - "$URL" -o "input_nsp/base.nsp"
             fi
           fi
           if [ -n "${{ github.event.inputs.update_download_url }}" ]; then
             U_URL="${{ github.event.inputs.update_download_url }}"
             echo "Downloading Update NSP: $U_URL"
-            curl --http1.1 --retry 20 --retry-delay 3 --retry-all-errors -L -C - "$U_URL" -o "input_nsp/update.nsp"
+            curl --fail --http1.1 --retry 30 --retry-delay 5 --retry-all-errors -L -C - "$U_URL" -o "input_nsp/update.nsp"
           fi
 
       - name: Verify Input Files
