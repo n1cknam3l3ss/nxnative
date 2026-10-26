@@ -1,0 +1,45 @@
+# BORDERLANDS 3: ULTIMATE EDITION: Gearbox Software / 2K, Unreal Engine 4.20.3 (OakGame paks, PhysX,
+# NVN, Wwise sound, Bink 2 movies); update 1.0.3 (v196608).
+# Discovered and profiled via nx_extract and profile_guess.py
+
+# ---- Identity ----
+title_id	01009970122E4000
+program_id	01009970122E4000
+
+# ---- App ----
+name	Borderlands 3
+ipa	Borderlands3.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v196608	1.0.3	main=ae2768797e3337ee209d7eab9574d475	rtld=1c6daa47389cb7915f054cbe9750a98e	sdk=835c229763ce5c1816a70f875bd70ccd
+package	v196608
+shader_versions	v196608
+
+# ---- Files ----
+modules	main sdk
+romfs_marker	OakGame/Content/Paks/pakchunk1-Switch.pak
+zip_store	.pak:.ttf:.usm:.bk2:.metallib
+
+# ---- Graphics ----
+# 60 fps (30 on the Switch): Unreal steps the game by the time that really passed.
+fps_target	60
+
+# ---- Memory ----
+# Unreal Engine 4: nninitStartup reserves 62 GB virtual address space by default.
+# -SwitchVirtualAddressSpaceSize=2048 restricts it to 2 GB for iOS compatibility.
+game_args	-SwitchVirtualAddressSpaceSize=2048
+mem_reserve	0x1028000000
+mem_alias	0x1008000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+sys_resource	0xc00000
+
+# ---- Input ----
+# A 3D shooter with dual-stick aim: full layout
+pad_layout	full
+
+# ---- Shader split ----
+# The shader code archives inside OakGame/Content/Paks/pakchunk0-Switch.pak (ShaderArchive-*.ushaderbytecode)
+shader_groups	ShaderArchive-Global-=global ShaderArchive-=game
+shader_note	Borderlands 3 shaders
