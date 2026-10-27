@@ -217,6 +217,15 @@ static void install_fps_state(module_t *m) {
 }
 // The settings in the state page, written when the game starts (main.c, after host loading): on iOS the loading runs at app launch, before the launcher has set DM_FPS_TARGET and
 // DM_RENDER_SCALE (Launcher.swift), and nothing reads the page before the game runs
+float runtime_aspect_now(void) {
+    if (!dm_fps_state) return 0;
+    float a = 0; memcpy(&a, dm_fps_state + 0x38, sizeof a);
+    return a;
+}
+void runtime_aspect_set(float a) {
+    if (!dm_fps_state) return;
+    memcpy(dm_fps_state + 0x38, &a, sizeof a);
+}
 void dm_fps_state_apply(void) {
     if (!dm_fps_state) return;
     const char *e = getenv("DM_FPS_TARGET"); int t = e ? atoi(e) : DM_GAME_FPS_TARGET;
@@ -227,6 +236,27 @@ void dm_fps_state_apply(void) {
     const char *rs = getenv("DM_RENDER_SCALE"); float sc = 1.0f;
     if (rs) { char *end; sc = strtof(rs, &end); if (end == rs || *end || !(sc >= 0.5f && sc <= 1.0f)) { LOG("[RED] DM_RENDER_SCALE=%s: must be 0.5 to 1.0; keeping the game's size", rs); sc = 1.0f; } else LOG("%s: 3D views rendered at %.2f of the game's size (DM_RENDER_SCALE)", g_fps_mod, sc); }
     memcpy(dm_fps_state + 0x10, &sc, sizeof sc);
+    float aspect = 0.0f;
+    const char *asp_env = getenv("DM_ASPECT");
+    if (!asp_env) asp_env = getenv("TOTK_ASPECT");
+#if TARGET_OS_IPHONE
+    if (asp_env && (!strcmp(asp_env, "0") || !strcmp(asp_env, "16:9"))) {
+        aspect = 0.0f;
+    } else {
+        aspect = 19.5f / 9.0f;
+    }
+#else
+    if (asp_env) {
+        if (!strcmp(asp_env, "21:9")) aspect = 21.0f / 9.0f;
+        else if (!strcmp(asp_env, "16:10")) aspect = 16.0f / 10.0f;
+        else if (!strcmp(asp_env, "32:9")) aspect = 32.0f / 9.0f;
+        else { float a = strtof(asp_env, NULL); if (a >= 0.5f && a <= 8.0f) aspect = a; }
+    }
+#endif
+    if (aspect > 0.0f) {
+        memcpy(dm_fps_state + 0x38, &aspect, sizeof aspect);
+        LOG("%s: camera aspect ratio %.4f (state +0x38)", g_fps_mod, aspect);
+    }
     char cap[32]; snprintf(cap, sizeof cap, ", capped at %d fps", t);
     LOG("%s: frame step %s%s (%s)", g_fps_mod, !t ? "as the game sets it" : "in whole vsyncs decided by the host", t ? cap : "", e ? "DM_FPS_TARGET" : "game profile fps_target");
 }
