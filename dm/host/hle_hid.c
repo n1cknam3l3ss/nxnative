@@ -542,7 +542,63 @@ static int shaking(uint64_t t) { return t >= atomic_load(&g_shake_t0) && t < ato
 // Every history entry is the newest sample, numbered by time. DM_MOTION=0 ignores live motion; DM_MOTION_AXES / DM_MOTION_ACC_SIGN map Apple's axes (motion_fusion.h);
 // DM_MOTION_GAIN sets the tilt correction (default 0.5); DM_MOTION_LOG=1 logs player 1's mapped sample once a second, for checking the axes
 enum { MOTION_STALE_NS = 300000000 };
-typedef struct { pthread_mutex_t mu; motion_state st; uint64_t last_ns, received_ns, logged; } live_motion;
+typedef struct {
+    pthread_mutex_t mu;
+    motion_state st;
+    uint64_t last_ns, received_ns, logged;
+    uint64_t win_start, win_last;
+    int win_n, bias_known;
+    float bias[3], bias_logged[3];
+    float win_g[3], win_a[3];
+    float win_gmin[3], win_gmax[3];
+    float win_amin[3], win_amax[3];
+} live_motion;
+
+static void bias_sample(live_motion *m, const float acc[3], const float gyro[3], uint64_t now) {
+    const float d = 180.0f / (float)M_PI;
+    const char *e = getenv("DM_GYRO_BIAS");
+    if (e && !strcmp(e, "0")) return;
+    if (e && strchr(e, ',')) {
+        float v[3];
+        if (sscanf(e, "%f,%f,%f", &v[0], &v[1], &v[2]) == 3) {
+            for (int i = 0; i < 3; i++) m->bias[i] = v[i] / d;
+            m->bias_known = 1;
+            return;
+        }
+    }
+    if (!m->win_n || now < m->win_last || now - m->win_last > 100000000ull) {
+        m->win_n = 0; m->win_start = now;
+        for (int i = 0; i < 3; i++) {
+            m->win_g[i] = m->win_a[i] = 0;
+            m->win_gmin[i] = m->win_gmax[i] = gyro[i];
+            m->win_amin[i] = m->win_amax[i] = acc[i];
+        }
+    }
+    m->win_last = now; m->win_n++;
+    for (int i = 0; i < 3; i++) {
+        m->win_g[i] += gyro[i]; m->win_a[i] += acc[i];
+        m->win_gmin[i] = fminf(m->win_gmin[i], gyro[i]); m->win_gmax[i] = fmaxf(m->win_gmax[i], gyro[i]);
+        m->win_amin[i] = fminf(m->win_amin[i], acc[i]); m->win_amax[i] = fmaxf(m->win_amax[i], acc[i]);
+    }
+    if (now - m->win_start < 1000000000ull) return;
+    int still = m->win_n >= 20; float mean[3], a[3];
+    for (int i = 0; i < 3; i++) {
+        mean[i] = m->win_g[i] / m->win_n; a[i] = m->win_a[i] / m->win_n;
+        if ((m->win_gmax[i] - m->win_gmin[i]) * d > 3.0f || (m->win_amax[i] - m->win_amin[i]) > 0.04f || fabsf(mean[i]) * d > 30.0f) still = 0;
+    }
+    float norm_a = sqrtf(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]);
+    if (still && fabsf(norm_a - 1.0f) < 0.1f) {
+        for (int i = 0; i < 3; i++) m->bias[i] = m->bias_known ? m->bias[i] + 0.3f * (mean[i] - m->bias[i]) : mean[i];
+        float moved = 0; for (int i = 0; i < 3; i++) moved = fmaxf(moved, fabsf(m->bias[i] - m->bias_logged[i]) * d);
+        if (!m->bias_known || moved > 0.3f) {
+            LOG("[hid] gyro bias %s at rest: %+.2f %+.2f %+.2f deg/s", m->bias_known ? "updated" : "learned",
+                m->bias[0] * d, m->bias[1] * d, m->bias[2] * d);
+            memcpy(m->bias_logged, m->bias, sizeof m->bias);
+        }
+        m->bias_known = 1;
+    }
+    m->win_n = 0;
+}
 static live_motion g_motion[DM_PLAYERS] = {[0 ... DM_PLAYERS - 1] = {.mu = PTHREAD_MUTEX_INITIALIZER}};
 static live_motion g_hid_motion[DM_PLAYERS] = {[0 ... DM_PLAYERS - 1] = {.mu = PTHREAD_MUTEX_INITIALIZER}};
 static live_motion g_phone_motion = {.mu = PTHREAD_MUTEX_INITIALIZER};
@@ -568,7 +624,12 @@ static void motion_set(int p, const float acc[3], const float rot[3], int source
     if (!m->last_ns || now - m->received_ns > MOTION_STALE_NS) { motion_reset(&m->st); m->last_ns = 0; }
     if (m->last_ns && t <= m->last_ns) { pthread_mutex_unlock(&m->mu); return; }
     float dt = m->last_ns && t > m->last_ns ? (float)((double)(t - m->last_ns) / 1e9) : 0;
-    motion_update(&m->st, source ? &identity : &g_motion_map, acc, rot, dt, g_motion_gain);
+        float cur_rot[3] = {rot[0], rot[1], rot[2]};
+    bias_sample(m, acc, rot, t);
+    if (m->bias_known) {
+        for (int i = 0; i < 3; i++) cur_rot[i] -= m->bias[i];
+    }
+    motion_update(&m->st, source ? &identity : &g_motion_map, acc, cur_rot, dt, g_motion_gain);
     if (g_motion_log && !p && t - m->logged > 1000000000ull) {
         m->logged = t;
         LOG("[hid] motion player 1 (%s): acc %+.2f %+.2f %+.2f G, gyro %+.3f %+.3f %+.3f rev/s (flat and still should read acc 0 0 -1)",

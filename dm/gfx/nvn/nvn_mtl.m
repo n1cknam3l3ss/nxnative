@@ -11370,6 +11370,15 @@ static void present_gpu_note(double s, int fx) {
     n[fx] = 0;
 }
 static double g_link_it_tin;   // Enqueue time of the frame the display-link callback is presenting (read and written only on the display-link thread)
+#if !TARGET_OS_SIMULATOR
+static double present_min_duration(double period) {
+    static double tick; static unsigned n;   // the refresh interval, read again every 240 pictures (the window may move)
+    if (!tick || ++n % 240 == 0) { int hz = mtl_display_hz(); tick = hz > 0 ? 1.0 / hz : 0; }
+    if (tick <= 0 || period < tick * 0.98) return period;
+    double whole = floor(period / tick + 0.02) * tick;
+    return whole - fmin(0.001, tick / 4);
+}
+#endif
 static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t ticket, const int crop[4], id<CAMetalDrawable> supplied, double target_ts) {
     if (g_present_stall_ns) { struct timespec ts = {0, (long)g_present_stall_ns}; nanosleep(&ts, NULL); }
     g_present_n++;
@@ -11484,7 +11493,7 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
     }];
     // Each frame is displayed for at least one present period: when the GPU completion time jitters around a 120 Hz refresh boundary, the paired "25 ms + 8.33 ms" stutter no longer appears
     if (target_ts > 0) [dr present];
-    else if (period > 0) [dr presentAfterMinimumDuration:period]; else [dr present];
+    else if (period > 0) [dr presentAfterMinimumDuration:present_min_duration(period)]; else [dr present];
 #endif
     (void)frame;
     return 1;

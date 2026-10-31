@@ -133,6 +133,35 @@ def frame_step(ctx):
     emit(B(here(), 0xd5d84))
     fs_put(0xd5d80, [B(0xd5d80, start)], 'dynamic resolution only at render scale 1.0')
 
+    # High-FPS fix: LOD and pre-actor fade increment >= 1 above 60 fps (MacNativeGames #466)
+    # Site 1: mesh LOD fade (0x0a7ac4)
+    fs_site(0x0a7ac4, '0800381e2a7942394801080b28790239')
+    start = here()
+    for w in (0x1e380008, 0x7100011f, 0x1a9f1508, 0x3942792a, 0x0b080148, 0x39027928): emit(w)
+    emit(B(here(), 0x0a7ad4))
+    fs_put(0x0a7ac4, [B(0x0a7ac4, start), NOP, NOP, NOP], 'mesh LOD fade increment >= 1 above 60 fps')
+
+    # Site 2: mesh LOD fade (0x95dd24)
+    fs_site(0x95dd24, '0800381e2801080b')
+    start = here()
+    for w in (0x1e380008, 0x7100011f, 0x1a9f1508, 0x0b080128): emit(w)
+    emit(B(here(), 0x95dd2c))
+    fs_put(0x95dd24, [B(0x95dd24, start), NOP], 'mesh LOD fade increment >= 1 above 60 fps')
+
+    # Site 3: pre-actor fade (0x6155e4)
+    fs_site(0x6155e4, '0a00381e')
+    start = here()
+    for w in (0x1e38000a, 0x7100015f, 0x1a9f154a): emit(w)
+    emit(B(here(), 0x6155e8))
+    fs_put(0x6155e4, [B(0x6155e4, start)], 'pre-actor fade increment >= 1 above 60 fps')
+
+    # Site 4: pre-actor fade (0x615660)
+    fs_site(0x615660, '0a00381e')
+    start = here()
+    for w in (0x1e38000a, 0x7100015f, 0x1a9f154a): emit(w)
+    emit(B(here(), 0x615664))
+    fs_put(0x615660, [B(0x615660, start)], 'pre-actor fade increment >= 1 above 60 fps')
+
 FRAME_STEP = {'277178b7dba1b6d4949a84778d4abc58': frame_step}
 
 # How general each patch is and could be (dm/tools/docs_patches.py "Binding", listed in docs/agents/game-patches.md): what, its binding now, the loosest it could have (goal),
