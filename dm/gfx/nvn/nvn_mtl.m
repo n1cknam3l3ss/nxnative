@@ -11311,6 +11311,17 @@ static int fx_mode(void) {
     MLOG("present upscaling (DM_PRESENT_UPSCALE): %s", v ? "metalfx, MetalFX's spatial scaler where the picture is shown larger than the game renders it" : "off, bilinear");
     return g_fx_mode = v;
 }
+
+int dm_get_upscale(void) {
+    return fx_mode();
+}
+
+void dm_set_upscale(int on) {
+    g_fx_mode = on ? 1 : 0;
+    setenv("DM_PRESENT_UPSCALE", on ? "metalfx" : "off", 1);
+    MLOG("present upscaling changed at runtime: %s", on ? "metalfx" : "off");
+}
+
 // MetalFX scales the content (cw x ch) to its rectangle on the canvas (vp) when the rectangle is at least as large in both directions and larger in one
 static int fx_wanted(MTLViewport vp, NSUInteger cw, NSUInteger ch) {
     NSUInteger w = (NSUInteger)vp.width, h = (NSUInteger)vp.height;

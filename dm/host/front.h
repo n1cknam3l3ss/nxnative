@@ -50,3 +50,8 @@ void front_save_failed(int err);
 // Aspect ratio for ultrawide / display matching (loader.c)
 float runtime_aspect_now(void);
 void runtime_aspect_set(float a);
+
+int dm_get_upscale(void);
+void dm_set_upscale(int on);
+int dm_get_framegen(void);
+void dm_set_framegen(int mode);

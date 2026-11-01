@@ -19,6 +19,10 @@ on:
         description: 'Release title (optional)'
         required: false
         default: ''
+      romfs_mode:
+        description: 'RomFS packaging: separate (Thin IPA ~100MB) or bundle (Thick IPA ~18GB)'
+        required: false
+        default: 'separate'
 
 jobs:
   build:
@@ -96,7 +100,12 @@ jobs:
           DM_TEAM_ID: ""
           PYTHONUTF8: "1"
         run: |
-          python3 scripts/build_ipa_from_nsp.py input_nsp -k keys/prod.keys --no-heap-check
+          ROMFS_OPT="--romfs separate"
+          if [ "${{ github.event.inputs.romfs_mode }}" = "bundle" ]; then
+            ROMFS_OPT="--romfs bundle"
+          fi
+          echo "Building with: $ROMFS_OPT"
+          python3 scripts/build_ipa_from_nsp.py input_nsp -k keys/prod.keys --no-heap-check $ROMFS_OPT
 
       - name: Prepare Release Assets (Split if > 2GB)
         if: success()

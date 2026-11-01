@@ -155,23 +155,7 @@ static void publish(void) {   // the touch gamepad and the shake; the host ORs t
 }
 
 // ---- Shaking the phone ----
-// The device's own six-axis (handheld mode = the console's sensor, hle_hid.c): CMDeviceMotion's calibrated gyro + gravity, at 100 Hz.
-static CMMotionManager *g_devmot;
-static void devmotion_start(void) {
-    if (g_devmot) return;
-    g_devmot = [CMMotionManager new];
-    if (!g_devmot.deviceMotionAvailable) { LOG("front end: no device motion (no gyroscope)"); g_devmot = nil; return; }
-    g_devmot.deviceMotionUpdateInterval = 1.0 / 100;
-    NSOperationQueue *q = [NSOperationQueue new]; q.qualityOfService = NSQualityOfServiceUserInteractive; q.maxConcurrentOperationCount = 1;
-    [g_devmot startDeviceMotionUpdatesToQueue:q withHandler:^(CMDeviceMotion *d, NSError *err) {
-        if (!d) return;
-        float acc[3] = { (float)(d.gravity.x + d.userAcceleration.x), (float)(d.gravity.y + d.userAcceleration.y), (float)(d.gravity.z + d.userAcceleration.z) };
-        float gyro[3] = { (float)(d.rotationRate.x / (2 * M_PI)), (float)(d.rotationRate.y / (2 * M_PI)), (float)(d.rotationRate.z / (2 * M_PI)) };
-        float quat[4] = { (float)d.attitude.quaternion.x, (float)d.attitude.quaternion.y, (float)d.attitude.quaternion.z, (float)d.attitude.quaternion.w };
-        dm_motion_set(0, acc, gyro, quat, now_ns());
-    }];
-    LOG("front end: the device's gyroscope is the handheld console's six-axis sensor");
-}
+
 
 // The accelerometer at 60 Hz (no gyroscope, no permission prompt): gravity is followed by a slow low-pass (about 0.8 s), and a sample whose acceleration beyond it exceeds DM_SHAKE_G
 // (1.5 G by default; Documents/env.txt overrides) is a hit. The controller is shaken until 120 ms after the last hit: a flick is one shake (the host finishes it as a whole cycle)
@@ -625,10 +609,82 @@ static CGFloat dist(CGPoint a, CGPoint b) { return hypot(a.x - b.x, a.y - b.y); 
     if (game) [self pushGame];
     [self recompute];
 }
+static void update_env_txt(const char *key, const char *val) {
+    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+    if (!paths.count) return;
+    NSString *envPath = [paths[0] stringByAppendingPathComponent:@"env.txt"];
+    NSMutableString *content = [NSMutableString stringWithContentsOfFile:envPath encoding:NSUTF8StringEncoding error:nil] ?: [NSMutableString string];
+    NSString *prefix = [NSString stringWithFormat:@"%s=", key];
+    NSRange range = [content rangeOfString:prefix];
+    NSString *newEntry = [NSString stringWithFormat:@"%s=%s\n", key, val];
+    if (range.location != NSNotFound) {
+        NSRange lineEnd = [content rangeOfString:@"\n" options:0 range:NSMakeRange(range.location, content.length - range.location)];
+        if (lineEnd.location != NSNotFound) {
+            [content replaceCharactersInRange:NSMakeRange(range.location, lineEnd.location - range.location + 1) withString:newEntry];
+        } else {
+            [content replaceCharactersInRange:NSMakeRange(range.location, content.length - range.location) withString:newEntry];
+        }
+    } else {
+        if (content.length > 0 && ![content hasSuffix:@"\n"]) [content appendString:@"\n"];
+        [content appendString:newEntry];
+    }
+    [content writeToFile:envPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+}
+
 - (void)showInGameMenu {
     UIViewController *vc = self.window.rootViewController;
     if (!vc) return;
     UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"Пауза / Меню" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+
+    int up_on = dm_get_upscale();
+    NSString *upTitle = [NSString stringWithFormat:@"🔍 Апскейлер (MetalFX): %@", up_on ? @"[ВКЛ]" : @"[ВЫКЛ]"];
+    [ac addAction:[UIAlertAction actionWithTitle:upTitle style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        int next = !up_on;
+        dm_set_upscale(next);
+        update_env_txt("DM_PRESENT_UPSCALE", next ? "metalfx" : "off");
+        UINotificationFeedbackGenerator *gen = [UINotificationFeedbackGenerator new];
+        [gen notificationOccurred:UINotificationFeedbackTypeSuccess];
+        [self showInGameMenu];
+    }]];
+
+    int fg_mode = dm_get_framegen();
+    NSString *fgStr = @"Выкл";
+    if (fg_mode == 1) fgStr = @"60+60 (120 Hz)";
+    else if (fg_mode == 2) fgStr = @"30+30";
+    else if (fg_mode == 3) fgStr = @"Max";
+    NSString *fgTitle = [NSString stringWithFormat:@"🚀 Фреймген (MetalFX): [%@]", fgStr];
+    [ac addAction:[UIAlertAction actionWithTitle:fgTitle style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        UIAlertController *sub = [UIAlertController alertControllerWithTitle:@"Генерация кадров (MetalFX)" message:@"Выберите режим интерполяции кадров:" preferredStyle:UIAlertControllerStyleActionSheet];
+        [sub addAction:[UIAlertAction actionWithTitle:@"Выкл (Native 30/60)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) {
+            dm_set_framegen(0);
+            update_env_txt("TOTK_MFX", "0");
+            [self showInGameMenu];
+        }]];
+        [sub addAction:[UIAlertAction actionWithTitle:@"60+60 (до 120 FPS для ProMotion)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) {
+            dm_set_framegen(1);
+            update_env_txt("TOTK_MFX", "interp60");
+            [self showInGameMenu];
+        }]];
+        [sub addAction:[UIAlertAction actionWithTitle:@"30+30 (до 60 FPS)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) {
+            dm_set_framegen(2);
+            update_env_txt("TOTK_MFX", "interp30");
+            [self showInGameMenu];
+        }]];
+        [sub addAction:[UIAlertAction actionWithTitle:@"Unlimited (Uncapped)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) {
+            dm_set_framegen(3);
+            update_env_txt("TOTK_MFX", "interpmax");
+            [self showInGameMenu];
+        }]];
+        [sub addAction:[UIAlertAction actionWithTitle:@"Назад" style:UIAlertActionStyleCancel handler:^(UIAlertAction *x) {
+            [self showInGameMenu];
+        }]];
+        if (sub.popoverPresentationController) {
+            sub.popoverPresentationController.sourceView = self;
+            CGPoint cp = self.swapCenter;
+            sub.popoverPresentationController.sourceRect = CGRectMake(cp.x - 20, cp.y - 20, 40, 40);
+        }
+        [vc presentViewController:sub animated:YES completion:nil];
+    }]];
 
     [ac addAction:[UIAlertAction actionWithTitle:@"⚡ Отправить сигнал пробуждения" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         extern void dm_wake_deadlock(void);
@@ -814,61 +870,6 @@ static BOOL pads_merged(GCController *gone) {
         any = YES; pad_keep_system_buttons(c); c.extendedGamepad.valueChangedHandler = ^(GCExtendedGamepad *g, GCControllerElement *el) { (void)el; read_pad(g); };
         dm_motion_attach(c, 0);   // every controller is player 1: the last one moved drives its six-axis sensor
         read_pad(c.extendedGamepad);
-        GCMotion *mo = c.motion;   // the controller's own six-axis (Pro Controller, DualShock, DualSense): gyro aiming (hle_hid.c six-axis sensor)
-        if (mo) {
-            static int mot_logged; if (!mot_logged++) LOG("front end: controller motion available (%@)", c.vendorName);
-            if (mo.sensorsRequireManualActivation) mo.sensorsActive = YES;
-            mo.valueChangedHandler = ^(GCMotion *m) {
-                // Launcher-adjustable calibration (dm/games/settings.tsv): read on every callback, the controller can connect before the launcher applies its env.
-                // Defaults calibrated on an NS Pro Controller with TOTK bow aiming: pitch and yaw flipped = a 180 deg turn about the vertical axis.
-                const char *e;
-                int ix = (e = getenv("DM_GYRO_INV_X")) ? atoi(e) : 1, iy = (e = getenv("DM_GYRO_INV_Y")) ? atoi(e) : 1, iz = (e = getenv("DM_GYRO_INV_Z")) ? atoi(e) : 0;
-                float gain = (e = getenv("DM_GYRO_GAIN")) ? (float)atof(e) : 1.5f;
-                double sx = ix ? -1 : 1, sy = iy ? -1 : 1, sz = iz ? -1 : 1;
-                float acc[3] = { (float)(sx * m.acceleration.x), (float)(sy * m.acceleration.y), (float)(sz * m.acceleration.z) };
-                float gyro[3] = { (float)(sx * m.rotationRate.x / (2 * M_PI) * gain), (float)(sy * m.rotationRate.y / (2 * M_PI) * gain), (float)(sz * m.rotationRate.z / (2 * M_PI) * gain) };   // rad/s -> revolutions/s
-                // iPadOS fuses no attitude for a controller (GCMotion.attitude stays the identity), so track the orientation here: integrate the gyro
-                // and nudge it toward the accelerometer's gravity near rest (a complementary filter: no drift, just a slow yaw wander with no reference).
-                static double q[4], pt; static int qset;
-                uint64_t t = now_ns();
-                double wx = sx * m.rotationRate.x * gain, wy = sy * m.rotationRate.y * gain, wz = sz * m.rotationRate.z * gain;   // rad/s
-                double an = sqrt((double)acc[0] * acc[0] + (double)acc[1] * acc[1] + (double)acc[2] * acc[2]);
-                if (an > 0.5) {
-                    double ax = acc[0] / an, ay = acc[1] / an, az = acc[2] / an;
-                    if (!qset) {   // first sample: the tilt taking the measured gravity to (0,0,-1), yaw 0
-                        double ux = -ay, uy = ax, un = sqrt(ux * ux + uy * uy);
-                        if (un < 1e-6) { q[0] = q[1] = q[2] = 0; q[3] = 1; }
-                        else { double th = acos(fmax(-1.0, fmin(1.0, -az))), sn = sin(th / 2) / un; q[0] = ux * sn; q[1] = uy * sn; q[2] = 0; q[3] = cos(th / 2); }
-                        qset = 1;
-                    } else {
-                        double dt = pt && t > pt ? (double)(t - pt) / 1e9 : 0; if (dt > 0.05) dt = 0.05;
-                        double dqx = 0.5 * dt * (q[3] * wx + q[1] * wz - q[2] * wy);
-                        double dqy = 0.5 * dt * (q[3] * wy + q[2] * wx - q[0] * wz);
-                        double dqz = 0.5 * dt * (q[3] * wz + q[0] * wy - q[1] * wx);
-                        double dqw = -0.5 * dt * (q[0] * wx + q[1] * wy + q[2] * wz);
-                        q[0] += dqx; q[1] += dqy; q[2] += dqz; q[3] += dqw;
-                        double qn = sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]); q[0] /= qn; q[1] /= qn; q[2] /= qn; q[3] /= qn;
-                        if (an > 0.7 && an < 1.3) {   // gravity correction, only near rest (an accelerating controller's acc is not gravity)
-                            double vx = 2 * (q[3] * q[1] - q[2] * q[0]), vy = -2 * (q[3] * q[0] + q[2] * q[1]), vz = 2 * (q[0] * q[0] + q[1] * q[1]) - 1;   // predicted gravity (0,0,-1) in the body frame
-                            double cx = vy * az - vz * ay, cy = vz * ax - vx * az, cz = vx * ay - vy * ax;   // v × a
-                            double s2 = sqrt(cx * cx + cy * cy + cz * cz);
-                            if (s2 > 1e-6) {
-                                double ph = -atan2(s2, vx * ax + vy * ay + vz * az) * 0.02, sn = sin(ph / 2) / s2;   // 2% of the misalignment a sample (~1 s at 60 Hz); negative: the body-frame right-multiplier whose inverse turns v toward a
-                                double cx2 = cx * sn, cy2 = cy * sn, cz2 = cz * sn, cw = cos(ph / 2);
-                                double nx = q[3] * cx2 + q[0] * cw + q[1] * cz2 - q[2] * cy2;
-                                double ny = q[3] * cy2 + q[1] * cw + q[2] * cx2 - q[0] * cz2;
-                                double nz = q[3] * cz2 + q[2] * cw + q[0] * cy2 - q[1] * cx2;
-                                double nw = q[3] * cw - q[0] * cx2 - q[1] * cy2 - q[2] * cz2;
-                                q[0] = nx; q[1] = ny; q[2] = nz; q[3] = nw;
-                            }
-                        }
-                    }
-                }
-                pt = t;
-                float quat[4] = { (float)q[0], (float)q[1], (float)q[2], (float)q[3] };
-                dm_motion_set(1, acc, gyro, quat, t);
-            };
-        } else { static int nm; if (!nm++) LOG("front end: connected controller reports no motion; gyro aiming falls back to the device sensor"); }
     }
     if (!any || !motion) dm_motion_clear(0);   // the phone's gyro (if on) takes over from its next sample
     if (!any) { dm_haptics_apple_controller(0, nil); dm_pad_set(0, 0, 0, 0, 0); }
