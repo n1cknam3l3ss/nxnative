@@ -88,13 +88,6 @@ jobs:
             curl --fail --http1.1 --retry 30 --retry-delay 5 --retry-all-errors -L -C - "$U_URL" -o "input_nsp/update.nsp"
           fi
 
-      - name: Select Xcode 27.2
-        run: |
-          if [ -d "/Applications/Xcode_27.2.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_27.2.app/Contents/Developer
-          fi
-          xcodebuild -version
-
       - name: Verify Input Files
         run: |
           echo "=== Keys directory ==="
@@ -104,7 +97,6 @@ jobs:
 
       - name: Run build_ipa_from_nsp
         env:
-          DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
           DM_TEAM_ID: ""
           PYTHONUTF8: "1"
         run: |
