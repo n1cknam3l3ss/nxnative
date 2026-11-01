@@ -16,6 +16,7 @@ NSString *dm_cloud_saves_path(BOOL *stale);
 
 /// Store a bookmark for the folder the player just picked. Returns NO when the system refuses to make one.
 BOOL dm_store_cloud_saves(NSURL *url);
+static inline BOOL dm_set_cloud_saves_url(NSURL *url) { return dm_store_cloud_saves(url); }
 
 /// Forget it: cloud saves off.
 void dm_clear_cloud_saves(void);

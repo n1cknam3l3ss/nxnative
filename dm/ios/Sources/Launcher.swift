@@ -39,7 +39,7 @@ private struct CloudSavesSection: View {
                 picking = false
                 let ok = url.startAccessingSecurityScopedResource()
                 defer { if ok { url.stopAccessingSecurityScopedResource() } }
-                if dm_set_cloud_saves_url(url as NSURL) {
+                if dm_store_cloud_saves(url as NSURL) {
                     refresh(); note = ""
                 } else {
                     note = "Could not access that folder. Please choose another one."
