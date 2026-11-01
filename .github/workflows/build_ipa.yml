@@ -23,6 +23,10 @@ on:
         description: 'RomFS packaging: separate (Thin IPA ~100MB) or bundle (Thick IPA ~18GB)'
         required: false
         default: 'separate'
+      cache_tag:
+        description: 'Shader cache identifier (e.g. totk, bl3, botw, or any game tag)'
+        required: false
+        default: 'totk'
 
 jobs:
   build:
@@ -40,6 +44,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           lfs: true
+
+      - name: Restore Shader Cache
+        uses: actions/cache/restore@v4
+        with:
+          path: shader_cache
+          key: shader-cache-${{ github.event.inputs.cache_tag || 'totk' }}-${{ github.run_id }}
+          restore-keys: |
+            shader-cache-${{ github.event.inputs.cache_tag || 'totk' }}-
+            shader-cache-
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -95,10 +108,28 @@ jobs:
           echo "=== Input NSP directory ==="
           ls -lh input_nsp/ || true
 
+      - name: Inject Shader Cache into Build Directory
+        run: |
+          if [ -d "shader_cache" ] && [ "$(ls -A shader_cache 2>/dev/null)" ]; then
+            echo "=== Found existing shader cache in shader_cache/ ==="
+            ls -la shader_cache/
+            for d in shader_cache/*_build; do
+              [ -d "$d" ] || continue
+              bname=$(basename "$d")
+              echo "Injecting cached shaders for $bname into input_nsp/$bname/shader..."
+              mkdir -p "input_nsp/$bname"
+              rm -rf "input_nsp/$bname/shader"
+              cp -R "$d/shader" "input_nsp/$bname/" 2>/dev/null || true
+            done
+          else
+            echo "No pre-existing shader cache. Shaders will compile from scratch and be saved."
+          fi
+
       - name: Run build_ipa_from_nsp
         env:
           DM_TEAM_ID: ""
           PYTHONUTF8: "1"
+          DMSH_CAS: "${{ github.workspace }}/shader_cache/cas"
         run: |
           ROMFS_OPT="--romfs separate"
           if [ "${{ github.event.inputs.romfs_mode }}" = "bundle" ]; then
@@ -106,6 +137,35 @@ jobs:
           fi
           echo "Building with: $ROMFS_OPT"
           python3 scripts/build_ipa_from_nsp.py input_nsp -k keys/prod.keys --no-heap-check --allow-other-metal $ROMFS_OPT
+
+      - name: Harvest Shader Cache
+        if: always()
+        run: |
+          mkdir -p shader_cache
+          HAS_CACHE=false
+          for d in input_nsp/*_build; do
+            [ -d "$d/shader" ] || continue
+            bname=$(basename "$d")
+            echo "Harvesting $bname/shader into shader_cache/$bname/shader..."
+            mkdir -p "shader_cache/$bname"
+            rm -rf "shader_cache/$bname/shader"
+            cp -R "$d/shader" "shader_cache/$bname/"
+            HAS_CACHE=true
+          done
+          if [ "$HAS_CACHE" = "true" ]; then
+            echo "SHADERS_PRESENT=true" >> $GITHUB_ENV
+            echo "=== Harvested shader cache ==="
+            ls -la shader_cache/
+          else
+            echo "SHADERS_PRESENT=false" >> $GITHUB_ENV
+          fi
+
+      - name: Persist Shader Cache to GitHub
+        if: always() && env.SHADERS_PRESENT == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: shader_cache
+          key: shader-cache-${{ github.event.inputs.cache_tag || 'totk' }}-${{ github.run_id }}
 
       - name: Prepare Release Assets (Split if > 2GB)
         if: success()
