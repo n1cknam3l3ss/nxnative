@@ -901,34 +901,3 @@ void run_module_inits(void) {
         ((void (*)(void))(m->base + m->init))();
     }
 }
-
-static int g_framegen_mode = 0; // 0=off, 1=60+60 (120Hz), 2=30+30, 3=Max
-
-int dm_get_framegen(void) {
-    const char *e = getenv("TOTK_MFX");
-    if (!e || !strcmp(e, "0") || !strcmp(e, "off")) return 0;
-    if (!strcmp(e, "interp60")) return 1;
-    if (!strcmp(e, "interp30")) return 2;
-    if (!strcmp(e, "interpmax")) return 3;
-    return g_framegen_mode;
-}
-
-void dm_set_framegen(int mode) {
-    g_framegen_mode = mode;
-    const char *val = "0";
-    if (mode == 1) val = "interp60";
-    else if (mode == 2) val = "interp30";
-    else if (mode == 3) val = "interpmax";
-    setenv("TOTK_MFX", val, 1);
-    if (dm_fps_state) {
-        if (mode == 1) {
-            float f = 60.0f;
-            memcpy(dm_fps_state, &f, sizeof f);
-            setenv("DM_FPS_TARGET", "60", 1);
-        } else if (mode == 2) {
-            float f = 30.0f;
-            memcpy(dm_fps_state, &f, sizeof f);
-            setenv("DM_FPS_TARGET", "30", 1);
-        }
-    }
-}

@@ -296,17 +296,6 @@ bool dm_setting_live(const char *env, const char *value) {
         }
         return true;
     }
-    if (!strcmp(env, "TOTK_MFX")) {
-        if (value) {
-            int mode = 0;
-            if (!strcmp(value, "interp60") || !strcmp(value, "1")) mode = 1;
-            else if (!strcmp(value, "interp30") || !strcmp(value, "2")) mode = 2;
-            else if (!strcmp(value, "interpmax") || !strcmp(value, "3")) mode = 3;
-            dm_set_framegen(mode);
-            LOG("front end: framegen mode %d (in-game menu)", mode);
-        }
-        return true;
-    }
     if (!strcmp(env, "DM_PICTURE_FIT_UNUSED")) {
         if (value) { g_root.fill = dm_picture_fill(value); [g_root.view setNeedsLayout]; LOG("front end: picture %s (in-game menu)", g_root.fill ? "Fill" : "Fit"); }
         return true;

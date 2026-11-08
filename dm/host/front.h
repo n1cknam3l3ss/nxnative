@@ -78,8 +78,6 @@ void runtime_aspect_set(float a);
 
 int dm_get_upscale(void);
 void dm_set_upscale(int on);
-int dm_get_framegen(void);
-void dm_set_framegen(int mode);
 
 // Offline HTML pages (the web applet's offline pages; hle_web.c): a web view over the game picture (web_apple.m, Mac and iPhone). Called from guest threads; the front end works on its main
 // thread. front_web_open: dir = the folder the document path is relative to (an HtmlDocument's html-document), path = the document path with its query, callback = the URL prefix whose
