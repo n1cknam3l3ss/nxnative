@@ -157,7 +157,7 @@ class R:
         if n < 0: return self.raw(-2 * n).decode('utf-16-le')[:-1]
         return self.raw(n)[:-1].decode('utf-8', 'replace') if n else ''
 
-LEGACY = (4, 8)   # legacy pak versions read (the per-file index); 11 has the encoded one. Version 8 (DRAGON BALL Z: KAKAROT, UE 4.2x) keeps version 4's index with the FPakEntry
+LEGACY = (4, 5, 6, 7, 8)   # legacy pak versions read (the per-file index); 11 has the encoded one. Version 8 (DRAGON BALL Z: KAKAROT, UE 4.2x) keeps version 4's index with the FPakEntry
 #   compression method as an index (from 1) into the footer's method names, and version 11's footer: key GUID, encrypted flag, magic 0xcc from the end, five 32-byte names after the SHA-1
 LEGACY_METHODS = {1: 'Zlib', 2: 'Gzip', 3: 'LZ5', 4: 'Custom'}   # compression flags of a legacy pak (3: DRAGON QUEST XI S's engine, see the header)
 
@@ -177,8 +177,8 @@ def pak_version(f):
 def footer(f):
     """(encrypted index, index offset, index size, compression method names by number from 1, version); ValueError when the index does not lie inside the file"""
     back, ver = magic_back(f)
-    if ver in (4, 11) and (ver == 4) != (back == 0x2c) or ver == 8 and back == 0x2c: raise ValueError(f'a version {ver} pak footer with its magic {back:#x} bytes from the end, where that version has none')
-    if ver == 4:
+    if ver in (4, 5, 6, 7, 11) and (ver in (4, 5, 6, 7)) != (back == 0x2c) or ver == 8 and back == 0x2c: raise ValueError(f'a version {ver} pak footer with its magic {back:#x} bytes from the end, where that version has none')
+    if ver in (4, 5, 6, 7):
         f.seek(-0x2d, 2); ft = f.read(0x2d); ioff, isz = struct.unpack_from('<QQ', ft, 9)
         enc, methods = ft[0], [LEGACY_METHODS.get(i, f'flags {i}') for i in range(1, 8)]
     elif ver not in (8, 11): raise ValueError(f'pak version {ver}, only {", ".join(map(str, LEGACY))} and 11 are read')
@@ -241,9 +241,29 @@ class Keys:
     second pak or version does not search main again (the shader code archives, job; the paks with the shaders inline, shader_split.py ue_legacy_jobs)"""
     def __init__(self, mains):
         self.mains, self.imgs, self.found = list(mains), {}, []
+        pk = os.environ.get('DM_PAK_KEY')
+        if not pk:
+            try:
+                import game
+                g = game.load()
+                pk = g.get('pak_key', None)
+            except Exception: pk = None
+        if pk:
+            try:
+                k = bytes.fromhex(pk.strip())
+                if len(k) == 32 and k not in self.found: self.found.append(k)
+            except Exception: pass
     def __call__(self, pak):
         with open(pak, 'rb') as f: enc = footer(f)[0]
         if not enc: return None
+        for k in self.found:
+            with open(pak, 'rb') as f:
+                _, ioff, _, _, _ = footer(f); f.seek(ioff); blk = f.read(16)
+            d = aes_decrypt(k, blk)
+            n = struct.unpack_from('<i', d)[0]
+            if 1 < n < 512 and d[4] in b'./':
+                s = d[4:min(4 + n, 16)]
+                if all(0x20 <= c < 0x7F for c in s[:n - 1]) and (len(s) < n or s[n - 1] == 0): return k
         for m in self.mains:
             if m not in self.imgs: self.imgs[m] = nso_image(m)
             img, lo, hi = self.imgs[m]
@@ -262,6 +282,16 @@ class Pak:
         self.mount = r.fstr(); self.count = r.take('<i')
         if self.version in LEGACY:   # one FPakEntry per file, kept as parsed
             self.files = {}
+            if self.version in (5, 6, 7):
+                for _ in range(self.count):
+                    name = r.fstr(); off, size, raw, meth = r.take('<qiiB')
+                    blocks = [r.take('<qq') for _ in range(r.take('<i'))] if meth else []
+                    e = r.take('<B')
+                    bsz = 64 * 1024
+                    head = 18 + (4 + 16 * len(blocks) if meth else 0)
+                    blocks = [(s, t - s) for s, t in blocks]
+                    self.files[name] = dict(off=off, raw=raw, size=size, method=LEGACY_METHODS.get(meth, f'flags {meth}') if meth else '', encrypted=e, block_size=bsz, blocks=blocks or [(head, size)])
+                return
             for _ in range(self.count):
                 name = r.fstr(); off, size, raw, meth = r.take('<qqqi'); r.raw(20)
                 blocks = [r.take('<qq') for _ in range(r.take('<i'))] if meth else []
@@ -303,7 +333,9 @@ class Pak:
         """A file's bytes, block by block (each block holds block_size raw bytes, the last one the rest). Zlib and LZ4 blocks are decoded here (OCTOPATH TRAVELER II: Zlib); any other
         method needs decode(block bytes, raw length) → bytes: the game's own decoder in the Mac host (shader_split.py oodle); Octopath Traveler 0's archives go through the Oodle job instead"""
         e = self.entry(path)
-        if not e['method']: return self.read_at(e['off'] + 53, e['size'], e['encrypted'])
+        if not e['method']:
+            head = 18 if self.version in (5, 6, 7) else 53
+            return self.read_at(e['off'] + head, e['size'], e['encrypted'])
         import zlib
         bad = (zlib.error,)   # a block its decoder refuses
         if e['method'] == 'Zlib': decode = zlib_block

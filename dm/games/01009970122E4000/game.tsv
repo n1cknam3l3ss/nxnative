@@ -39,7 +39,10 @@ sys_resource	0xc00000
 # A 3D shooter with dual-stick aim: full layout
 pad_layout	full
 
+# ---- Key ----
+pak_key	514A1776AD8474FF873E4643726BE7E79A4699B802A0A9E57D9E37E322178555
+
 # ---- Shader split ----
-# The shader code archives inside OakGame/Content/Paks/pakchunk0-Switch.pak (ShaderArchive-*.ushaderbytecode)
-shader_groups	ShaderArchive-Global-=global ShaderArchive-=game
+# Inline shaders inside OakGame/Content/Paks/*.pak
+shader_groups	GlobalShaderCache=global #Engine/=engine #OakGame/=game
 shader_note	Borderlands 3 shaders
