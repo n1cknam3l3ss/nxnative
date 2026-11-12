@@ -67,7 +67,7 @@ jobs:
       - name: Set up Python dependencies
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install --break-system-packages lz4 capstone fonttools "backports.zstd; python_version < '3.14'"
+          python3 -m pip install --break-system-packages nsz lz4 capstone fonttools "backports.zstd; python_version < '3.14'"
 
       - name: Prepare Directories and Keys
         env:
@@ -91,14 +91,22 @@ jobs:
               unzip -q input_nsp/game.zip -d input_nsp/ || true
               rm -f input_nsp/game.zip
             else
-              echo "Downloading Base NSP: $URL"
-              curl --fail --http1.1 --retry 30 --retry-delay 5 --retry-all-errors -L -C - "$URL" -o "input_nsp/base.nsp"
+              EXT="nsp"
+              if [[ "$URL" == *".nsz"* ]]; then EXT="nsz"; fi
+              if [[ "$URL" == *".xci"* ]]; then EXT="xci"; fi
+              if [[ "$URL" == *".xcz"* ]]; then EXT="xcz"; fi
+              echo "Downloading Base package ($EXT): $URL"
+              curl --fail --http1.1 --retry 30 --retry-delay 5 --retry-all-errors -L -C - "$URL" -o "input_nsp/base.$EXT"
             fi
           fi
           if [ -n "${{ github.event.inputs.update_download_url }}" ]; then
             U_URL="${{ github.event.inputs.update_download_url }}"
-            echo "Downloading Update NSP: $U_URL"
-            curl --fail --http1.1 --retry 30 --retry-delay 5 --retry-all-errors -L -C - "$U_URL" -o "input_nsp/update.nsp"
+            U_EXT="nsp"
+            if [[ "$U_URL" == *".nsz"* ]]; then U_EXT="nsz"; fi
+            if [[ "$U_URL" == *".xci"* ]]; then U_EXT="xci"; fi
+            if [[ "$U_URL" == *".xcz"* ]]; then U_EXT="xcz"; fi
+            echo "Downloading Update package ($U_EXT): $U_URL"
+            curl --fail --http1.1 --retry 30 --retry-delay 5 --retry-all-errors -L -C - "$U_URL" -o "input_nsp/update.$U_EXT"
           fi
 
       - name: Verify Input Files
