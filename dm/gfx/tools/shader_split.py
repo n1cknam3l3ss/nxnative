@@ -2141,118 +2141,24 @@ def ue3_body(d, label):
         i = o
     return b''.join(out)
 
-def probe_bmsg(d, label):
-    import os, glob
-    print(f"\n[PROBE-DETAIL] ==================== {label} size={len(d)} ====================", flush=True)
-    print(f"[PROBE-DETAIL] Header 128 bytes: {d[:128].hex()}", flush=True)
-
-    # Save raw GlobalShaderCache.bin so it gets uploaded in debug-logs artifact
-    for pat in ('input_nsp/*_build/logs', '*_build/logs', 'logs', '.'):
-        for p in glob.glob(pat):
-            if os.path.isdir(p):
-                try:
-                    with open(os.path.join(p, 'GlobalShaderCache.bin'), 'wb') as f: f.write(d)
-                    print(f"[PROBE-SAVED] Saved {len(d)} bytes to {p}/GlobalShaderCache.bin", flush=True)
-                except Exception as e:
-                    print(f"[PROBE-ERROR] Could not save to {p}: {e}", flush=True)
-
-    ctls = [m.start() for m in re.finditer(re.escape(CTL_MAGIC), d)]
-    gfxs = [m.start() for m in re.finditer(re.escape(GFX_MAGIC), d)]
-    css = [m.start() for m in re.finditer(re.escape(CS_MAGIC), d)]
-    print(f"[PROBE-DETAIL] Total: ctls={len(ctls)}, gfxs={len(gfxs)}, css={len(css)}", flush=True)
-
-    first_offset = min(ctls[0], gfxs[0]) if (ctls and gfxs) else 0
-    print(f"[PROBE-DETAIL] First shader record starts at: {hex(first_offset)}", flush=True)
-    print(f"[PROBE-DETAIL] Header/table area 0x0..{hex(min(first_offset, 256))}: {d[:min(first_offset, 256)].hex()}", flush=True)
-
-    merged = sorted([(c, 'C') for c in ctls] + [(g, 'G') for g in gfxs] + [(cs, 'S') for cs in css])
-    pattern = ''.join(t for _, t in merged[:60])
-    print(f"[PROBE-PATTERN] First 60 elements pattern: {pattern}", flush=True)
-    for pos, t in merged[:10]:
-        print(f"  {t} @ {hex(pos)} (distance to prev: {hex(pos - merged[merged.index((pos, t))-1][0]) if merged.index((pos, t)) > 0 else 0})", flush=True)
-
-    for i in range(min(5, len(ctls))):
-        c = ctls[i]
-        ncode = struct.unpack_from('<I', d, c + 0x704)[0] if c + 0x708 <= len(d) else 0
-        nctl = struct.unpack_from('<I', d, c + 0x20)[0] if c + 0x24 <= len(d) else 0
-        print(f"[PROBE-CTL] ctl[{i}] @ {hex(c)}: ncode={ncode} ({hex(ncode)}), nctl={nctl} ({hex(nctl)})", flush=True)
-        print(f"  before ctl (32b): {d[max(0, c-32):c].hex()}", flush=True)
-        print(f"  at c - ncode ({hex(c - ncode)}): {d[max(0, c-ncode):max(0, c-ncode)+16].hex()}", flush=True)
-        print(f"  at c + 0x880 ({hex(c + 0x880)}): {d[c+0x880:c+0x880+16].hex()}", flush=True)
-
-    for i in range(min(5, len(gfxs))):
-        g = gfxs[i]
-        st = sph_stage(d[g:g + 0x40]) if g + 0x40 <= len(d) else None
-        print(f"[PROBE-GFX] gfx[{i}] @ {hex(g)}: stage={st}", flush=True)
-        print(f"  before gfx (32b): {d[max(0, g-32):g].hex()}", flush=True)
-        print(f"  first 48b of gfx: {d[g:g+48].hex()}", flush=True)
-    print(f"[PROBE-DETAIL] ==================== END PROBE ====================\n", flush=True)
-
 def ue3_shaders(d, label):
-    """Shader records of an Unreal Engine 3 / 4 game's shader caches (Batman: Arkham Knight, Borderlands 3: GlobalShaderCache-*.bin, 'BMSG')"""
-    probe_bmsg(d, label)
-    ctls = [m.start() for m in re.finditer(re.escape(CTL_MAGIC), d)]
-    codes = sorted([m.start() for m in re.finditer(re.escape(GFX_MAGIC), d)] + [m.start() for m in re.finditer(re.escape(CS_MAGIC), d)])
-    out, used_codes = [], set()
-
-    for c in ctls:
+    """Shader records of an Unreal Engine 3 game's shader caches (Batman: Arkham Knight: GlobalShaderCache-Switch.bin, 'BMSG', 1,847 shaders; CombinedShaderCache-Switch.xxx, a package holding
+    22,874 once its chunks are decoded, ue3_body; none of 68 other packages sampled holds any): u32 record length, u32 code area length, u32 control length (0x880), on the global cache one more u32,
+    then the code area, right followed by its control section. Found by the control section's magic, its code area length (+0x704) back to the code area's magic, and the two lengths in front.
+    The engine combines vertex and pixel shaders per draw, so they are paired as single-stage programs (separable_pairs)"""
+    out = []
+    for m in re.finditer(re.escape(CTL_MAGIC), d):
+        c = m.start()
         if c + 0x708 > len(d): continue
-        ncode = struct.unpack_from('<I', d, c + 0x704)[0]
-        nctl = struct.unpack_from('<I', d, c + 0x20)[0] if c + 0x24 <= len(d) else 0x880
-        if not (0x760 <= nctl <= 0x1000): nctl = 0x880
-        if c + nctl > len(d): continue
-        ctl = d[c:c + nctl]
-
-        code = None
-        # 1. Try code immediately preceding the control section
-        a = c - ncode
-        if a >= 0 and a + ncode <= len(d) and d[a:a + 4] in (GFX_MAGIC, CS_MAGIC):
-            code = d[a:a + ncode]
-            used_codes.add(a)
-
-        # 2. Try code immediately following the control section
-        if code is None:
-            for cand_a in (c + nctl, (c + nctl + 15) & ~15):
-                if cand_a + ncode <= len(d) and d[cand_a:cand_a + 4] in (GFX_MAGIC, CS_MAGIC):
-                    code = d[cand_a:cand_a + ncode]
-                    used_codes.add(cand_a)
-                    break
-
-        # 3. Try matching candidate code by preceding length header
-        if code is None:
-            for cand_a in codes:
-                if cand_a not in used_codes and cand_a + ncode <= len(d):
-                    has_len = any(cand_a >= k and struct.unpack_from('<I', d, cand_a - k)[0] == ncode for k in (4, 8, 12, 16))
-                    if has_len:
-                        cand_c = d[cand_a:cand_a + ncode]
-                        st_cand = 'cs' if cand_c[:4] == CS_MAGIC else sph_stage(cand_c)
-                        if st_cand:
-                            code = cand_c
-                            used_codes.add(cand_a)
-                            break
-
-        if code is not None and CTL_MAGIC not in code:
-            st = 'cs' if code[:4] == CS_MAGIC else sph_stage(code)
-            if st and not check(label, st, ctl, code):
-                out.append((f'{label}#UE3@{c:x}', st, ctl, code))
-
-    # 4. If any unused codes remain and there are unmatched ctls, pair them in address order
-    if len(used_codes) < len(codes):
-        rem_codes = [g for g in codes if g not in used_codes]
-        rem_ctls = [c for c in ctls if not any(f'{c:x}' in r[0] for r in out)]
-        for g, c in zip(rem_codes, rem_ctls):
-            ncode = struct.unpack_from('<I', d, c + 0x704)[0]
-            nctl = struct.unpack_from('<I', d, c + 0x20)[0] if c + 0x24 <= len(d) else 0x880
-            if not (0x760 <= nctl <= 0x1000): nctl = 0x880
-            if g + ncode <= len(d) and c + nctl <= len(d):
-                code = d[g:g + ncode]
-                if CTL_MAGIC in code: continue
-                ctl = d[c:c + nctl]
-                st = 'cs' if code[:4] == CS_MAGIC else sph_stage(code)
-                if st and not check(label, st, ctl, code):
-                    out.append((f'{label}#UE3@{c:x}', st, ctl, code))
-
-    print(f'[BMSG] {label}: successfully extracted {len(out)} shaders from {len(ctls)} ctls and {len(codes)} codes', flush=True)
+        n = struct.unpack_from('<I', d, c + 0x704)[0]; a = c - n
+        if a < 12 or d[a:a + 4] not in (GFX_MAGIC, CS_MAGIC): continue
+        nctl = next((lc for k in (4, 8) if a - k - 4 >= 0 for ln, lc in [struct.unpack_from('<II', d, a - k - 4)] if ln == n and 0x760 <= lc <= 0x1000), None)
+        if nctl is None or c + nctl > len(d): continue
+        ctl, code = d[c:c + nctl], d[a:c]
+        st = 'cs' if code[:4] == CS_MAGIC else sph_stage(code)
+        why = check(label, st, ctl, code) if st else 'no stage in the code area header'
+        if why: red(f'{label}: shader record at {c:#x} ({st}): {why}')
+        out.append((f'{label}#UE3@{c:x}', st, ctl, code))
     return out
 
 UE_LEGACY, UE_IO = 'UE legacy pak', 'UE IoStore'
@@ -2346,7 +2252,7 @@ def ue_inline_shaders(d, label, out):
         lslgs = len(list(re.finditer(b'LSLG', d)))
         print(f'[PROBE] {label}: size={len(d)}, head={d[:16].hex()}, BMSG={b"BMSG" in d[:16]}, ctls={ctls}, gfxs={gfxs}, css={css}, lslgs={lslgs}', flush=True)
 
-    if b'BMSG' in d[:16] or ue3_package(d[:6]):
+    if (b'BMSG' in d[:16] and b'LSLG' not in d) or ue3_package(d[:6]):
         body = d[d.find(b'BMSG'):] if b'BMSG' in d[:16] else ue3_body(d, label) if d[:4] == UE3_TAG else d
         ue3 = ue3_shaders(body, label)
         if ue3:
@@ -2380,6 +2286,18 @@ def ue_inline_shaders(d, label, out):
             try: s = lz4.block.decompress(d[j:j + n], uncompressed_size=raw)
             except Exception: continue
             if len(s) == raw and s[:4] == b'LSLG': take(s, j); break
+        for j in range(i - 6, max(i - 16, 12), -1):   # an Oodle block whose first literals start here (UE4 Oodle, Borderlands 3)
+            if d[j:j + 2] in (b'\x8c\x06', b'\x8c\x0a', b'\x8c\x0b', b'\x8c\x0c'):
+                n = int.from_bytes(d[j - 4:j], 'little')
+                raw = int.from_bytes(d[j - 12:j - 8], 'little')
+                if 8 <= n <= len(d) - j and n <= raw <= 1 << 24:
+                    try:
+                        s = oodle(d[j:j + n], raw)
+                        if s and len(s) == raw and s[:4] == b'LSLG':
+                            take(s, j)
+                            break
+                    except Exception:
+                        pass
     # The same tables of the shader map with the code in Oodle: Unreal Engine 5.4 for the Switch 2 (Yoshi and the Mysterious Book) with an NVN2 record that has no LSLG (uepak.sage_record), and
     # Unreal Engine 5.1 for the Switch (DRAGON BALL Sparking! ZERO: SP_GLSL_SWITCH, its global shader cache's 2,125 entries all LSLG records, taken as above).
     # A table is proved by its first entry, as the streams above are by their decode: a stream the decoder refuses, or a stored one that is no record, makes it no table. A stream that decodes to exactly
