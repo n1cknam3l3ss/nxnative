@@ -138,6 +138,7 @@ jobs:
           DM_TEAM_ID: ""
           PYTHONUTF8: "1"
           DMSH_CAS: "${{ github.workspace }}/shader_cache/cas"
+          DM_PAK_KEY: "514A1776AD8474FF873E4643726BE7E79A4699B802A0A9E57D9E37E322178555"
         run: |
           ROMFS_OPT="--romfs separate"
           if [ "${{ github.event.inputs.romfs_mode }}" = "bundle" ]; then

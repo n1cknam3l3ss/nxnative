@@ -242,12 +242,12 @@ class Keys:
     def __init__(self, mains):
         self.mains, self.imgs, self.found = list(mains), {}, []
         pk = os.environ.get('DM_PAK_KEY')
-        if not pk:
+        if not pk and os.environ.get('DM_GAME'):
             try:
                 import game
                 g = game.load()
                 pk = g.get('pak_key', None)
-            except Exception: pk = None
+            except BaseException: pk = None
         if pk:
             try:
                 k = bytes.fromhex(pk.strip())
