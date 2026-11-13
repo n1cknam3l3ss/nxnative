@@ -739,15 +739,17 @@ MAP_ROWS, MAP_CONFLICT_ROWS = {}, {}
 for raw in open(MAP, 'rb'):
     c = raw.rstrip(b'\n').split(b'\t')
     if len(c) > 4: MAP_ROWS.setdefault(c[3].decode(), raw)
-for raw in open(MAP + '.conflicts.tsv', 'rb'):
-    c = raw.rstrip(b'\n').split(b'\t')
-    if len(c) > 1 and not raw.startswith((b'#', b'dm_')): MAP_CONFLICT_ROWS.setdefault(c[0].decode(), raw)
+if os.path.exists(MAP + '.conflicts.tsv'):
+    for raw in open(MAP + '.conflicts.tsv', 'rb'):
+        c = raw.rstrip(b'\n').split(b'\t')
+        if len(c) > 1 and not raw.startswith((b'#', b'dm_')): MAP_CONFLICT_ROWS.setdefault(c[0].decode(), raw)
 for ln in open(MAP):
     c = ln.rstrip('\n').split('\t')
     if len(c) > 4 and c[0].endswith('.bin'): pc_of.setdefault(c[3], c[4]); loc.setdefault(c[3], (c[0], int(c[1])))
-for ln in open(MAP + '.conflicts.tsv'):
-    c = ln.rstrip('\n').split('\t')
-    if len(c) > 1 and not ln.startswith('#') and not ln.startswith('dm_') and c[0] in pc_of: pc_of[c[0]] = c[1]
+if os.path.exists(MAP + '.conflicts.tsv'):
+    for ln in open(MAP + '.conflicts.tsv'):
+        c = ln.rstrip('\n').split('\t')
+        if len(c) > 1 and not ln.startswith('#') and not ln.startswith('dm_') and c[0] in pc_of: pc_of[c[0]] = c[1]
 
 def vertex_ab(key, code, ctl):
     """A vertex shader in two parts, VertexA + VertexB, as one program (Catherine: Full Body's GLSLC, SDK 8.2.1, GPU code version 1.15, writes every vertex shader so; the other games' are one
