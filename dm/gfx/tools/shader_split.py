@@ -3160,6 +3160,14 @@ def main():
         names = sorted(f for f in os.listdir(ued) if f.endswith('.ushaderbytecode') and not f.startswith('._')) if os.path.isdir(ued) else []   # AppleDouble metadata, not decoded shader archives
         if not names and uepak.unreal_paks(romfs, inline=False, mains=[mainnso]): red(f'the RomFS has Unreal paks, but there are no decoded shader code archives in {ued} (the NSP script writes them)')
         for nm in names: found += ue_shaders(open(os.path.join(ued, nm), 'rb').read(), f'/ue_shaders/{nm}')
+        shd = GAME.dir / 'shdump'
+        if shd.is_dir():
+            for ctl_p in sorted(shd.glob('*.ctl')):
+                code_p = ctl_p.with_suffix('.code')
+                if code_p.is_file():
+                    c, k = ctl_p.read_bytes(), code_p.read_bytes()
+                    st = sph_stage(k) or ('cs' if k[:4] == CS_MAGIC else 'ps')
+                    found.append((f'/shdump/{ctl_p.stem}', st, c, k))
         results.append(('main', {skey(c, k): (w, s, c, k) for w, s, c, k in found}, var_pairs(found), {}))
     for romfs in dlc_v:
         name = os.path.basename(os.path.normpath(romfs))
