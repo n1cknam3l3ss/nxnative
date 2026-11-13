@@ -2143,35 +2143,67 @@ def ue3_body(d, label):
 
 def ue3_shaders(d, label):
     """Shader records of an Unreal Engine 3 / 4 game's shader caches (Batman: Arkham Knight, Borderlands 3: GlobalShaderCache-*.bin, 'BMSG')"""
-    out = []
-    for m in re.finditer(re.escape(CTL_MAGIC), d):
-        c = m.start()
+    ctls = [m.start() for m in re.finditer(re.escape(CTL_MAGIC), d)]
+    codes = sorted([m.start() for m in re.finditer(re.escape(GFX_MAGIC), d)] + [m.start() for m in re.finditer(re.escape(CS_MAGIC), d)])
+    out, used_codes = [], set()
+
+    for c in ctls:
         if c + 0x708 > len(d): continue
-        n = struct.unpack_from('<I', d, c + 0x704)[0]; a = c - n
-        nctl, code = None, None
-        if a >= 4 and d[a:a + 4] in (GFX_MAGIC, CS_MAGIC):
-            nctl = next((lc for k in (4, 8) if a - k - 4 >= 0 for ln, lc in [struct.unpack_from('<II', d, a - k - 4)] if ln == n and 0x760 <= lc <= 0x1000), None)
-            code = d[a:a + n]
-        else:
-            cand_ctl = struct.unpack_from('<I', d, c + 0x20)[0] if c + 0x24 <= len(d) else 0
-            if 0x760 <= cand_ctl <= 0x1000:
-                nctl = cand_ctl
-                cand_a = c + nctl
-                if cand_a + 4 <= len(d) and d[cand_a:cand_a + 4] in (GFX_MAGIC, CS_MAGIC):
-                    a = cand_a
-                    code = d[a:a + n]
-                elif (cand_a + 15) & ~15 + 4 <= len(d) and d[(cand_a + 15) & ~15:(cand_a + 15) & ~15 + 4] in (GFX_MAGIC, CS_MAGIC):
-                    a = (cand_a + 15) & ~15
-                    code = d[a:a + n]
-        if nctl is None and c + 0x24 <= len(d):
-            cand = struct.unpack_from('<I', d, c + 0x20)[0]
-            if 0x760 <= cand <= 0x1000: nctl = cand
-        if nctl is None or code is None or c + nctl > len(d): continue
+        ncode = struct.unpack_from('<I', d, c + 0x704)[0]
+        nctl = struct.unpack_from('<I', d, c + 0x20)[0] if c + 0x24 <= len(d) else 0x880
+        if not (0x760 <= nctl <= 0x1000): nctl = 0x880
+        if c + nctl > len(d): continue
         ctl = d[c:c + nctl]
-        st = 'cs' if code[:4] == CS_MAGIC else sph_stage(code)
-        why = check(label, st, ctl, code) if st else 'no stage in the code area header'
-        if why: continue
-        out.append((f'{label}#UE3@{c:x}', st, ctl, code))
+
+        code = None
+        # 1. Try code immediately preceding the control section
+        a = c - ncode
+        if a >= 0 and a + ncode <= len(d) and d[a:a + 4] in (GFX_MAGIC, CS_MAGIC):
+            code = d[a:a + ncode]
+            used_codes.add(a)
+
+        # 2. Try code immediately following the control section
+        if code is None:
+            for cand_a in (c + nctl, (c + nctl + 15) & ~15):
+                if cand_a + ncode <= len(d) and d[cand_a:cand_a + 4] in (GFX_MAGIC, CS_MAGIC):
+                    code = d[cand_a:cand_a + ncode]
+                    used_codes.add(cand_a)
+                    break
+
+        # 3. Try matching candidate code by preceding length header
+        if code is None:
+            for cand_a in codes:
+                if cand_a not in used_codes and cand_a + ncode <= len(d):
+                    has_len = any(cand_a >= k and struct.unpack_from('<I', d, cand_a - k)[0] == ncode for k in (4, 8, 12, 16))
+                    if has_len:
+                        cand_c = d[cand_a:cand_a + ncode]
+                        st_cand = 'cs' if cand_c[:4] == CS_MAGIC else sph_stage(cand_c)
+                        if st_cand:
+                            code = cand_c
+                            used_codes.add(cand_a)
+                            break
+
+        if code is not None:
+            st = 'cs' if code[:4] == CS_MAGIC else sph_stage(code)
+            if st and not check(label, st, ctl, code):
+                out.append((f'{label}#UE3@{c:x}', st, ctl, code))
+
+    # 4. If any unused codes remain and there are unmatched ctls, pair them in address order
+    if len(used_codes) < len(codes):
+        rem_codes = [g for g in codes if g not in used_codes]
+        rem_ctls = [c for c in ctls if not any(f'{c:x}' in r[0] for r in out)]
+        for g, c in zip(rem_codes, rem_ctls):
+            ncode = struct.unpack_from('<I', d, c + 0x704)[0]
+            nctl = struct.unpack_from('<I', d, c + 0x20)[0] if c + 0x24 <= len(d) else 0x880
+            if not (0x760 <= nctl <= 0x1000): nctl = 0x880
+            if g + ncode <= len(d) and c + nctl <= len(d):
+                code = d[g:g + ncode]
+                ctl = d[c:c + nctl]
+                st = 'cs' if code[:4] == CS_MAGIC else sph_stage(code)
+                if st and not check(label, st, ctl, code):
+                    out.append((f'{label}#UE3@{c:x}', st, ctl, code))
+
+    print(f'[BMSG] {label}: successfully extracted {len(out)} shaders from {len(ctls)} ctls and {len(codes)} codes', flush=True)
     return out
 
 UE_LEGACY, UE_IO = 'UE legacy pak', 'UE IoStore'
