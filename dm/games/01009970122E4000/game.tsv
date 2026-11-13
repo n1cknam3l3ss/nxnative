@@ -28,9 +28,10 @@ fps_target	60
 # ---- Memory ----
 # Unreal Engine 4: nninitStartup reserves 62 GB virtual address space by default.
 # -SwitchVirtualAddressSpaceSize=2048 restricts it to 2 GB for iOS compatibility.
+# For iOS, memory layout uses standard 3.75GB guest block (Octopath Traveler 0 profile):
 game_args	-SwitchVirtualAddressSpaceSize=2048
-mem_reserve	0x1028000000
-mem_alias	0x1008000000
+mem_reserve	0xF0000000
+mem_alias	0xC8000000
 mem_stack	0x10000000
 app_pool	0xCD500000
 sys_resource	0xc00000
