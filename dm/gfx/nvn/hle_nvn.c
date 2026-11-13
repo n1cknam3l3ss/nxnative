@@ -958,7 +958,7 @@ static void cmd_new_segment(cmd_t *o, uint8_t *mem, size_t n) {
 // Those segments have no guest range to be reclaimed by, so they are not reclaimed; the cap's abort names the state, and the fix belongs in the record sizes
 #define HOSTSEG_SZ (256u << 10)
 #define HOSTSEG_SMALL (4u << 10)
-#define HOSTSEG_CAP (1u << 30)
+#define HOSTSEG_CAP (4ULL << 30)
 uint64_t dm_nvn_frame_count(void);
 typedef struct { uint8_t *mem; size_t n; uint64_t frame; int busy; uintptr_t org_lo, org_hi; } hostseg_t;   // org: the guest range of the recording it hangs off (0 = unknown, never reclaimed)
 static hostseg_t *g_hostseg; static int g_nhostseg, g_caphostseg; static uint64_t g_hostseg_bytes;
@@ -983,7 +983,7 @@ static uint8_t *hostseg_take(const cmd_t *o, size_t n) {
     }
     unsigned t = ++total; int ns = g_nhostseg; uint64_t bytes = g_hostseg_bytes;
     pthread_mutex_unlock(&g_hostseg_mu);
-    if (!m) die("NVN command memory: the game's pool is empty and host-lent segments reached %u MB without being reclaimed by the game's blocks", HOSTSEG_CAP >> 20);
+    if (!m) die("NVN command memory: the game's pool is empty and host-lent segments reached %u MB without being reclaimed by the game's blocks", (unsigned)(HOSTSEG_CAP >> 20));
     if (t == 1 || t % 1024 == 0) LOG("[nvn] the game's command memory ran short, the host lends a segment of %zu KB (%u times so far, frame %llu, segment pool %d segments, %llu KB)", n >> 10, t, (unsigned long long)f, ns, (unsigned long long)(bytes >> 10));
     return m;
 }
