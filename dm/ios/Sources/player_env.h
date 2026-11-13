@@ -5,7 +5,7 @@
 #include <string.h>
 static inline int dm_player_diagnostic_key(const char *key) {
     // Encoding placement changes scheduling, not diagnostics or launcher state.
-    if(!strcmp(key,"DM_NVN_ENC_THREAD"))return 0;
+    if(!strcmp(key,"DM_NVN_ENC_THREAD") || !strcmp(key,"DM_NVN_SHDUMP"))return 0;
     static const char *const prefixes[]={"DM_NVN_","DM_TEST_","MTL_DEBUG_","MTL_SHADER_VALIDATION"};
     for(unsigned i=0;i<sizeof prefixes/sizeof *prefixes;i++)
         if(!strncmp(key,prefixes[i],strlen(prefixes[i])))return 1;
