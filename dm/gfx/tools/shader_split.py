@@ -2141,8 +2141,56 @@ def ue3_body(d, label):
         i = o
     return b''.join(out)
 
+def probe_bmsg(d, label):
+    import os, glob
+    print(f"\n[PROBE-DETAIL] ==================== {label} size={len(d)} ====================", flush=True)
+    print(f"[PROBE-DETAIL] Header 128 bytes: {d[:128].hex()}", flush=True)
+
+    # Save raw GlobalShaderCache.bin so it gets uploaded in debug-logs artifact
+    for pat in ('input_nsp/*_build/logs', '*_build/logs', 'logs', '.'):
+        for p in glob.glob(pat):
+            if os.path.isdir(p):
+                try:
+                    with open(os.path.join(p, 'GlobalShaderCache.bin'), 'wb') as f: f.write(d)
+                    print(f"[PROBE-SAVED] Saved {len(d)} bytes to {p}/GlobalShaderCache.bin", flush=True)
+                except Exception as e:
+                    print(f"[PROBE-ERROR] Could not save to {p}: {e}", flush=True)
+
+    ctls = [m.start() for m in re.finditer(re.escape(CTL_MAGIC), d)]
+    gfxs = [m.start() for m in re.finditer(re.escape(GFX_MAGIC), d)]
+    css = [m.start() for m in re.finditer(re.escape(CS_MAGIC), d)]
+    print(f"[PROBE-DETAIL] Total: ctls={len(ctls)}, gfxs={len(gfxs)}, css={len(css)}", flush=True)
+
+    first_offset = min(ctls[0], gfxs[0]) if (ctls and gfxs) else 0
+    print(f"[PROBE-DETAIL] First shader record starts at: {hex(first_offset)}", flush=True)
+    print(f"[PROBE-DETAIL] Header/table area 0x0..{hex(min(first_offset, 256))}: {d[:min(first_offset, 256)].hex()}", flush=True)
+
+    merged = sorted([(c, 'C') for c in ctls] + [(g, 'G') for g in gfxs] + [(cs, 'S') for cs in css])
+    pattern = ''.join(t for _, t in merged[:60])
+    print(f"[PROBE-PATTERN] First 60 elements pattern: {pattern}", flush=True)
+    for pos, t in merged[:10]:
+        print(f"  {t} @ {hex(pos)} (distance to prev: {hex(pos - merged[merged.index((pos, t))-1][0]) if merged.index((pos, t)) > 0 else 0})", flush=True)
+
+    for i in range(min(5, len(ctls))):
+        c = ctls[i]
+        ncode = struct.unpack_from('<I', d, c + 0x704)[0] if c + 0x708 <= len(d) else 0
+        nctl = struct.unpack_from('<I', d, c + 0x20)[0] if c + 0x24 <= len(d) else 0
+        print(f"[PROBE-CTL] ctl[{i}] @ {hex(c)}: ncode={ncode} ({hex(ncode)}), nctl={nctl} ({hex(nctl)})", flush=True)
+        print(f"  before ctl (32b): {d[max(0, c-32):c].hex()}", flush=True)
+        print(f"  at c - ncode ({hex(c - ncode)}): {d[max(0, c-ncode):max(0, c-ncode)+16].hex()}", flush=True)
+        print(f"  at c + 0x880 ({hex(c + 0x880)}): {d[c+0x880:c+0x880+16].hex()}", flush=True)
+
+    for i in range(min(5, len(gfxs))):
+        g = gfxs[i]
+        st = sph_stage(d[g:g + 0x40]) if g + 0x40 <= len(d) else None
+        print(f"[PROBE-GFX] gfx[{i}] @ {hex(g)}: stage={st}", flush=True)
+        print(f"  before gfx (32b): {d[max(0, g-32):g].hex()}", flush=True)
+        print(f"  first 48b of gfx: {d[g:g+48].hex()}", flush=True)
+    print(f"[PROBE-DETAIL] ==================== END PROBE ====================\n", flush=True)
+
 def ue3_shaders(d, label):
     """Shader records of an Unreal Engine 3 / 4 game's shader caches (Batman: Arkham Knight, Borderlands 3: GlobalShaderCache-*.bin, 'BMSG')"""
+    probe_bmsg(d, label)
     ctls = [m.start() for m in re.finditer(re.escape(CTL_MAGIC), d)]
     codes = sorted([m.start() for m in re.finditer(re.escape(GFX_MAGIC), d)] + [m.start() for m in re.finditer(re.escape(CS_MAGIC), d)])
     out, used_codes = [], set()
@@ -2183,7 +2231,7 @@ def ue3_shaders(d, label):
                             used_codes.add(cand_a)
                             break
 
-        if code is not None:
+        if code is not None and CTL_MAGIC not in code:
             st = 'cs' if code[:4] == CS_MAGIC else sph_stage(code)
             if st and not check(label, st, ctl, code):
                 out.append((f'{label}#UE3@{c:x}', st, ctl, code))
@@ -2198,6 +2246,7 @@ def ue3_shaders(d, label):
             if not (0x760 <= nctl <= 0x1000): nctl = 0x880
             if g + ncode <= len(d) and c + nctl <= len(d):
                 code = d[g:g + ncode]
+                if CTL_MAGIC in code: continue
                 ctl = d[c:c + nctl]
                 st = 'cs' if code[:4] == CS_MAGIC else sph_stage(code)
                 if st and not check(label, st, ctl, code):
