@@ -51,15 +51,20 @@ FREQ = {0: 'vs', 1: 'hs', 2: 'ds', 3: 'ps', 4: 'gs', 5: 'cs'}   # EShaderFrequen
 
 _cc = None
 def aes_decrypt(key, data):
-    """AES-256 ECB decryption through CommonCrypto (every Mac has it; no Python package needed)"""
+    """AES-256 ECB decryption through CommonCrypto (every Mac has it) or cryptography fallback"""
     global _cc
-    if _cc is None:
-        _cc = ctypes.CDLL('/usr/lib/libSystem.B.dylib').CCCrypt
-        _cc.restype = ctypes.c_int32
-        _cc.argtypes = [ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
-    out = ctypes.create_string_buffer(len(data)); moved = ctypes.c_size_t()
-    if _cc(1, 0, 2, key, len(key), None, data, len(data), out, len(data), ctypes.byref(moved)): raise ValueError('CCCrypt failed')   # decrypt, AES, ECB
-    return out.raw[:moved.value]
+    if sys.platform == 'darwin':
+        if _cc is None:
+            _cc = ctypes.CDLL('/usr/lib/libSystem.B.dylib').CCCrypt
+            _cc.restype = ctypes.c_int32
+            _cc.argtypes = [ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+        out = ctypes.create_string_buffer(len(data)); moved = ctypes.c_size_t()
+        if _cc(1, 0, 2, key, len(key), None, data, len(data), out, len(data), ctypes.byref(moved)): raise ValueError('CCCrypt failed')   # decrypt, AES, ECB
+        return out.raw[:moved.value]
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    cipher = Cipher(algorithms.AES(key), modes.ECB())
+    decryptor = cipher.decryptor()
+    return decryptor.update(data) + decryptor.finalize()
 
 _M, _K0, _K1, _K2 = (1 << 64) - 1, 0xc3a5c85c97cb3127, 0xb492b66fbe98f273, 0x9ae16a3b2f90404f
 def _rot(v, s): return ((v >> s) | (v << (64 - s))) & _M if s else v

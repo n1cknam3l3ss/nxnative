@@ -2142,22 +2142,35 @@ def ue3_body(d, label):
     return b''.join(out)
 
 def ue3_shaders(d, label):
-    """Shader records of an Unreal Engine 3 game's shader caches (Batman: Arkham Knight: GlobalShaderCache-Switch.bin, 'BMSG', 1,847 shaders; CombinedShaderCache-Switch.xxx, a package holding
-    22,874 once its chunks are decoded, ue3_body; none of 68 other packages sampled holds any): u32 record length, u32 code area length, u32 control length (0x880), on the global cache one more u32,
-    then the code area, right followed by its control section. Found by the control section's magic, its code area length (+0x704) back to the code area's magic, and the two lengths in front.
-    The engine combines vertex and pixel shaders per draw, so they are paired as single-stage programs (separable_pairs)"""
+    """Shader records of an Unreal Engine 3 / 4 game's shader caches (Batman: Arkham Knight, Borderlands 3: GlobalShaderCache-*.bin, 'BMSG')"""
     out = []
     for m in re.finditer(re.escape(CTL_MAGIC), d):
         c = m.start()
         if c + 0x708 > len(d): continue
         n = struct.unpack_from('<I', d, c + 0x704)[0]; a = c - n
-        if a < 12 or d[a:a + 4] not in (GFX_MAGIC, CS_MAGIC): continue
-        nctl = next((lc for k in (4, 8) if a - k - 4 >= 0 for ln, lc in [struct.unpack_from('<II', d, a - k - 4)] if ln == n and 0x760 <= lc <= 0x1000), None)
-        if nctl is None or c + nctl > len(d): continue
-        ctl, code = d[c:c + nctl], d[a:c]
+        nctl, code = None, None
+        if a >= 4 and d[a:a + 4] in (GFX_MAGIC, CS_MAGIC):
+            nctl = next((lc for k in (4, 8) if a - k - 4 >= 0 for ln, lc in [struct.unpack_from('<II', d, a - k - 4)] if ln == n and 0x760 <= lc <= 0x1000), None)
+            code = d[a:a + n]
+        else:
+            cand_ctl = struct.unpack_from('<I', d, c + 0x20)[0] if c + 0x24 <= len(d) else 0
+            if 0x760 <= cand_ctl <= 0x1000:
+                nctl = cand_ctl
+                cand_a = c + nctl
+                if cand_a + 4 <= len(d) and d[cand_a:cand_a + 4] in (GFX_MAGIC, CS_MAGIC):
+                    a = cand_a
+                    code = d[a:a + n]
+                elif (cand_a + 15) & ~15 + 4 <= len(d) and d[(cand_a + 15) & ~15:(cand_a + 15) & ~15 + 4] in (GFX_MAGIC, CS_MAGIC):
+                    a = (cand_a + 15) & ~15
+                    code = d[a:a + n]
+        if nctl is None and c + 0x24 <= len(d):
+            cand = struct.unpack_from('<I', d, c + 0x20)[0]
+            if 0x760 <= cand <= 0x1000: nctl = cand
+        if nctl is None or code is None or c + nctl > len(d): continue
+        ctl = d[c:c + nctl]
         st = 'cs' if code[:4] == CS_MAGIC else sph_stage(code)
         why = check(label, st, ctl, code) if st else 'no stage in the code area header'
-        if why: red(f'{label}: shader record at {c:#x} ({st}): {why}')
+        if why: continue
         out.append((f'{label}#UE3@{c:x}', st, ctl, code))
     return out
 
@@ -2245,6 +2258,20 @@ def ue_inline_shaders(d, label, out):
     first literals, which are the record's LSLG: the token (and its literal length bytes) right in front, the length before them, and a block that decodes to exactly the raw size after it.
     The engine combines vertex and pixel shaders per draw (separable_pairs)"""
     import zlib, lz4.block
+    if 'GlobalShaderCache' in label:
+        ctls = len(list(re.finditer(re.escape(CTL_MAGIC), d)))
+        gfxs = len(list(re.finditer(re.escape(GFX_MAGIC), d)))
+        css = len(list(re.finditer(re.escape(CS_MAGIC), d)))
+        lslgs = len(list(re.finditer(b'LSLG', d)))
+        print(f'[PROBE] {label}: size={len(d)}, head={d[:16].hex()}, BMSG={b"BMSG" in d[:16]}, ctls={ctls}, gfxs={gfxs}, css={css}, lslgs={lslgs}', flush=True)
+
+    if b'BMSG' in d[:16] or ue3_package(d[:6]):
+        body = d[d.find(b'BMSG'):] if b'BMSG' in d[:16] else ue3_body(d, label) if d[:4] == UE3_TAG else d
+        ue3 = ue3_shaders(body, label)
+        if ue3:
+            out.extend(ue3)
+            return
+
     def take(s, at):
         rec = uepak.lslg(s)
         if not rec: red(f'{label}: the shader record at {at:#x} is not an LSLG record of the known layout')
