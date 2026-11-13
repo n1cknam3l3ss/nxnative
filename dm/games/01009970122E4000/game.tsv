@@ -26,10 +26,10 @@ zip_store	.pak:.ttf:.usm:.bk2:.metallib
 fps_target	60
 
 # ---- Memory ----
-# Unreal Engine 4: nninitStartup reserves 62 GB virtual address space by default.
-# -SwitchVirtualAddressSpaceSize=2048 restricts it to 2 GB for iOS compatibility.
-# For iOS, memory layout uses standard 3.75GB guest block (Octopath Traveler 0 profile):
-game_args	-SwitchVirtualAddressSpaceSize=2048
+# Unreal Engine 4.20 (OakGame): nninitStartup reserves virtual address memory for the engine.
+# The rewriter cuts the FMallocBinned3 constructor call (the host runs Unreal's heap on a malloc
+# zone outside the guest block; dm/tools/ue_malloc.py, hle_uemalloc.c) and ue_region gives the region
+# what the alias region has room for (2.81 GB).
 mem_reserve	0xF0000000
 mem_alias	0xC8000000
 mem_stack	0x10000000
