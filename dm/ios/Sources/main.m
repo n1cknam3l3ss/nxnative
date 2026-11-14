@@ -108,6 +108,7 @@ const char *front_ios_boot_message(void) { return g_boot_message[0] ? g_boot_mes
 const char *front_ios_device_check(void) {
     static char msg[320]; static int done;
     if (done++) return msg[0] ? msg : NULL;
+    if (getenv("DM_IGNORE_BC") || getenv("DM_ALLOW_NO_BC") || getenv("DM_TEX_BC_CPU") || getenv("DM_PROF_TEX_BC_CPU")) return NULL;
     id<MTLDevice> gpu = MTLCreateSystemDefaultDevice();   // the system default device, the one the graphics layers take (mtl_init repeats this check for the other routes)
     if (gpu.supportsBCTextureCompression) return NULL;
     snprintf(msg, sizeof msg, "This device's GPU (%s) cannot read BC-compressed textures, which the games use. It needs an iPhone 15 Pro or newer (A17 Pro chip or later) or an iPad with an M1 chip or later.",

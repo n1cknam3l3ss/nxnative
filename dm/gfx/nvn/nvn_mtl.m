@@ -641,7 +641,7 @@ void mtl_init(void) {
     }
     // BC textures are created and uploaded as BC, with no decompression path (dm/gfx/tex/README.md); without BC the first one aborts in Metal's descriptor validation mid-game
     // (GitHub issue #704: an iPhone 15, A16). The iOS front end refuses such a device before the launcher (main.m); this stops every other route at the device, with the reason
-    if (!g_dev.supportsBCTextureCompression) MDIE("the Metal device %s has no BC texture formats, which the games' textures use and the host does not decompress: an iPhone needs an A17 Pro or later, an iPad an M1 or later", g_dev.name.UTF8String);
+    if (!g_dev.supportsBCTextureCompression && !getenv("DM_IGNORE_BC") && !getenv("DM_ALLOW_NO_BC") && !getenv("DM_TEX_BC_CPU") && !getenv("DM_PROF_TEX_BC_CPU")) MDIE("the Metal device %s has no BC texture formats, which the games' textures use and the host does not decompress: an iPhone needs an A17 Pro or later, an iPad an M1 or later", g_dev.name.UTF8String);
     [g_q addResidencySet:g_res];
     [g_q4 addResidencySet:g_res];
     { void crash_set_wait_dump(void (*fn)(void)); void mtl_wait_state_dump(void); crash_set_wait_dump(mtl_wait_state_dump); }
