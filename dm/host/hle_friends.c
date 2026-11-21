@@ -2,6 +2,7 @@
 // Not cut: the getters of Friend / Profile / FriendPresence and the constructors of Friend / Profile / UserPresence (they only read and write the game's own objects and do not go through the service).
 // Unless stated otherwise, Result returns RES_FAIL; bool returns false; event pointers get a SystemEvent that is bound to a kernel event and never fires.
 #include "hle.h"
+#include "hle_discord.h"
 
 // Notification event that never fires (GetSystemEvent-style calls return a pointer; bound on the guest thread on first use)
 static _Alignas(16) uint8_t g_ev_notify[0x100], g_ev_invite[0x100];
@@ -67,5 +68,13 @@ HLE_FORCE("_ZN2nn7friends29DeclareCloseOnlinePlaySessionERKNS_7account3UidE", "o
 // A user's own presence succeeds offline. The host accepts initialization, description and commit without publishing to the friends service.
 // Returning failure here can stop a game's startup; see services.md, "Friends presence is accepted offline".
 HLE_FORCE("_ZN2nn7friends12UserPresence10InitializeERKNS_7account3UidE", "presence accepted, not published (cut)", Result, h_fr_UpInit, void *self, const void *uid) { (void)self; (void)uid; return RES_OK; }
-HLE_FORCE("_ZN2nn7friends12UserPresence14SetDescriptionEPKc", "presence accepted, not published (cut)", Result, h_fr_UpDesc, void *self, const char *s) { (void)self; (void)s; return RES_OK; }
-HLE_FORCE("_ZN2nn7friends12UserPresence6CommitEv", "presence accepted, not published (cut)", Result, h_fr_UpCommit, void *self) { (void)self; return RES_OK; }
+HLE_FORCE("_ZN2nn7friends12UserPresence14SetDescriptionEPKc", "presence accepted, not published (cut)", Result, h_fr_UpDesc, void *self, const char *s) {
+    (void)self;
+    if (s) dm_discord_rpc_set_status(s);
+    return RES_OK;
+}
+HLE_FORCE("_ZN2nn7friends12UserPresence6CommitEv", "presence accepted, not published (cut)", Result, h_fr_UpCommit, void *self) {
+    (void)self;
+    dm_discord_rpc_commit();
+    return RES_OK;
+}

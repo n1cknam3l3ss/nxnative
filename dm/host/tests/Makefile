@@ -197,6 +197,11 @@ $(B)/t_audio_spsc: t_audio_spsc.c ../hle_audio.c $(AUDIO_INPUT_DEPS) ../hle_bigs
 	$(CLANG) -O1 -Wno-unused-function -I.. $(GINC) -o $@ t_audio_spsc.c ../hle_bigstack.c $(AUDIO_INPUT_STUB) -framework AudioToolbox -framework CoreAudio -framework CoreFoundation
 $(B)/t_audio_stats: t_audio_stats.c ../hle_audio.c $(AUDIO_INPUT_DEPS) ../hle_bigstack.c ../hle.h ../dm.h $(GAME_H) | $(B)
 	$(CLANG) -O1 -Wall -Werror -Wno-unused-function -I.. $(GINC) -o $@ t_audio_stats.c ../hle_bigstack.c $(AUDIO_INPUT_STUB) -framework AudioToolbox -framework CoreAudio -framework CoreFoundation
+run: $(B)/t_discord
+	$(B)/t_discord
+$(B)/t_discord: t_discord.c ../hle_discord.c ../hle_discord.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -I.. -o $@ t_discord.c ../hle_discord.c -lpthread
+
 run: $(B)/t_audio_stats
 $(B)/t_audio_device: t_audio_device.c ../hle_audio.c $(AUDIO_INPUT_DEPS) ../hle_bigstack.c ../hle.h ../dm.h $(GAME_H) | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -I.. $(GINC) -o $@ t_audio_device.c ../hle_bigstack.c $(AUDIO_INPUT_STUB) -framework AudioToolbox -framework CoreAudio -framework CoreFoundation

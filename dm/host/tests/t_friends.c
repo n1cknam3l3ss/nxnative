@@ -4,6 +4,8 @@
 #include <mach-o/getsect.h>
 void hle_bind_system_event(void *g, int autoclear) { (void)g; (void)autoclear; }
 void hle_signal_system_event(void *g) { (void)g; }
+void dm_discord_rpc_set_status(const char *desc) { (void)desc; }
+void dm_discord_rpc_commit(void) {}
 extern const struct mach_header_64 _mh_execute_header;
 static int checks, fails;
 #define CHECK(c, s) do { checks++; int ok = !!(c); fails += !ok; printf("%s %s\n", ok ? "✓" : "✗", s); } while (0)

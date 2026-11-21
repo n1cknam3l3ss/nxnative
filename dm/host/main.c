@@ -1,6 +1,7 @@
 // Bootstrap: after loading the modules, initialize the SDK runtime in the real order of nn::init::Start (sdk+0x2b0470) in the SDK, then enter nnMain.
 #include "dm.h"
 #include "front.h"
+#include "hle_discord.h"
 #include "../gfx/nvn/dmsh_chain.h"
 #include <CoreFoundation/CoreFoundation.h>
 #include <stdatomic.h>
@@ -118,6 +119,7 @@ static void host_preload(int argc, char **argv) {
         if (c && CFGetTypeID(c) == CFStringGetTypeID()) CFStringGetCString((CFStringRef)c, cs, sizeof cs, kCFStringEncodingUTF8);
         LOG("build: commit %s, shader chain %s, profile %s", cs, DMSH_CHAIN, DM_GAME_ID);
     }
+    dm_discord_rpc_init(DM_GAME_NAME, DM_GAME_ID);
     const char *race = getenv("DM_TEST_KEYRACE");
     if (race && *race) {
         g_race_want = (unsigned)strtoul(race, NULL, 10);
