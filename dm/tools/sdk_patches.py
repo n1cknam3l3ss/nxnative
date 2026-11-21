@@ -1,50 +1,4 @@
-# The rewriter's patches of Nintendo SDK module builds (sdk), which several games can ship: dm/tools/patch_nso.py applies those of a module's NSO build ID, whatever the game.
-# A patch of a game's own module (main) goes in its profile's patches.py (dm/games/<id>/patches.py). CUTS as described in patch_nso.py ("Registered patches")
-CUTS = {
-  # Kingdom Battle 1.9.589692, SDK 4.4.0: the older VammManager reserves a
-  # full 1 GB node area (constructor +0x93dd8, occupied range +0x93e98).
-  # Snowdrop's compact 3 GB region follows its small metadata reservation;
-  # 1 GB placement alignment still cannot fit it in the iPhone guest block.
-  # Platform-limit cuts: 64 MB node area and 32 MB large-region alignment.
-  '9de92bad67c4150268943ab4843ace65': [
-    (0x93dfc, 'e9030232', '0980a052', 'VammManager node area limit: 1 GB to 64 MB'),
-    (0x93e8c, 'ea030232', '0a80a052', 'VammManager occupied node area: 1 GB to 64 MB'),
-    (0x93fe0, 'ea030232', '0a40a052', 'AllocateAddressRegion: align regions of 1 GB and more to 32 MB'),
-  ],
-  # Ace Attorney Investigations Collection 1.0.0.2 (v131072) sdk (SDK 17.5.3): the same node area cut as Engage's. Without it nninitStartup's StandardAllocator::Initialize(nullptr, pool − used)
-  # (main+0x874b6c, virtual address memory) aborts at its first CentralHeap::Init: the 1 GB-aligned region of 3.14 GB did not fit in the 4.375 GB alias region after the node area.
-  # The constructor is at sdk+0x139458 (limit = alias start + 0x3fe00000 at +0x28, a unit heap of 0x30-byte nodes, the area then registered as occupied)
-  # The SDK-wide alignment rule matches this build too (sdk+0x13965c, checked 2026-10-29); this row keeps it out until a game shipping the build is run with it.
-  '311deab1f062b504f3d646a49ddcd4e8': [
-    (0x139468, '08fca752', '087ca052', 'AddressRegionManager constructor: node area limit mov w8,#0x3fe00000 → mov w8,#0x3e00000'),
-    (0x1394fc, '09fca752', '097ca052', 'AddressRegionManager constructor: length of the node area registered as an occupied region mov w9,#0x3fe00000 → mov w9,#0x3e00000'),
-  ],
-  # Brain Memory Training Academy 1.0.0 (v0) sdk (SDK 16.2.4, the same build as Unicorn Overlord 1.05's, which has no virtual address memory and never allocates an address region):
-  # the same node area cut. nninitStartup (main+0x73ad60) calls StandardAllocator::Initialize(nullptr, pool − used) with virtual address memory, which aborted at its CentralHeap::Init.
-  # The constructor is at sdk+0x134768 (limit = alias start + 0x3fe00000 at +0x28, a unit heap of 0x30-byte nodes, the area then registered as occupied at +0x13480c)
-  # The SDK-wide alignment rule matches this build too (sdk+0x13496c, checked 2026-10-29); this row keeps it out until a game shipping the build is run with it.
-  '12f161039300861f1054371f0e36b8c9': [
-    (0x134778, '08fca752', '087ca052', 'AddressRegionManager constructor: node area limit mov w8,#0x3fe00000 → mov w8,#0x3e00000'),
-    (0x13480c, '09fca752', '097ca052', 'AddressRegionManager constructor: length of the node area registered as an occupied region mov w9,#0x3fe00000 → mov w9,#0x3e00000'),
-  ],
-  # Patrick's Parabox 1.0.1 (v65536) sdk (SDK 13.3.7, Unity 2020.3.30f1): the same node area cut. nninitStartup (main+0x1cd010) calls StandardAllocator::Initialize(nullptr, pool − used) with virtual
-  # address memory, which aborted at its CentralHeap::Init (sdk+0x324dec). The constructor is at sdk+0x37c3a0 (limit = alias start + 0x3fe00000 at +0x28, a unit heap of 0x30-byte nodes, the area then
-  # registered as occupied at +0x37c44c)
-  '9c73fb73f529fedc9ffefa28246711cc': [
-    (0x37c3b0, '08fca752', '087ca052', 'AddressRegionManager constructor: node area limit mov w8,#0x3fe00000 → mov w8,#0x3e00000'),
-    (0x37c44c, '09fca752', '097ca052', 'AddressRegionManager constructor: length of the node area registered as an occupied region mov w9,#0x3fe00000 → mov w9,#0x3e00000'),
-  ],
-  # Hollow Knight: Silksong 1.0.30000 (v655360) sdk (SDK 20.5.8, Unity 6000.0.50f1): the same node area cut. Unity 6 takes all its memory itself through nn::os::AllocateAddressRegion and
-  # AllocateMemoryPages (no heap, no StandardAllocator in nninitStartup), and without the cut its regions start after the node area: the alias region's high-water mark was +1.00 GB at
-  # nninitStartup and +3.00 GB in the first room of play, with 1.51 GB mapped. The constructor is at sdk+0x145bec (limit = alias start + 0x3fe00000 at +0x28, a unit heap of 0x30-byte
-  # nodes, the area then registered as occupied at +0x145c68)
-  'e01950c58e17b080c90494784ea1dd29': [
-    (0x145bfc, '08fca752', '087ca052', 'AddressRegionManager constructor: node area limit mov w8,#0x3fe00000 → mov w8,#0x3e00000'),
-    (0x145c68, '09fca752', '097ca052', 'AddressRegionManager constructor: length of the node area registered as an occupied region mov w9,#0x3fe00000 → mov w9,#0x3e00000'),
-  ],
-}
-
-# SDK-wide function patches (dm/tools/nso_match.py): the two fixes above that hold for any game on an iPhone's small address space, for every game's sdk of a build with no CUTS
+# SDK-wide function patches (dm/tools/nso_match.py) for every game's sdk of a build with no CUTS
 # (patch_nso.py "Registered patches"), so a new game or a new version of one gets them without a cut for its build. The Switch's alias region is
 # 64 GB, where neither matters; the host's is about 4.4 GB:
 # - the AddressRegionManager constructor's node area: 0x3fe00000 (about 1 GB) at the start of the alias region → 0x3e00000 (62 MB, about 1.35 million 0x30-byte nodes; a few hundred
@@ -59,8 +13,8 @@ CUTS = {
 # One rule per reviewed implementation: a function size and cut offsets, with the fingerprints of every registered build that has them (the same body, other callees). Each was
 # taken from that build's CUTS above and resolves to exactly the registered cuts there; on the 36 sdk builds on the game drives each rule matched once or not at all (2026-10-28).
 # Older SDKs (Fire Emblem: Three Houses, Bayonetta, Donkey Kong Country: Tropical Freeze, Xenoblade Chronicles 2, Yoshi's Crafted World) have other implementations, not reviewed.
-# Builds whose registered rows these rules reproduce exactly (20, checked on the game drive, 2026-10-29, 2026-10-30), or reproduce with the 2 MB alignment more and a game run with
-# it (5, 2026-10-30 and 2026-11-09), so their rows were removed: what was found on each
+# Builds whose registered rows these rules reproduce exactly (21, checked on the game drive, 2026-10-29, 2026-10-30, 2026-11-09), or reproduce with the 2 MB alignment more and a game run with
+# it (8, 2026-10-30 and 2026-11-09), so their rows were removed: what was found on each
 # - 3053b229…: Sea of Stars 2.0.59001 (v786432) sdk (SDK 16.2.0, the build of Super Mario Bros. Wonder 1.0.0 / 1.0.1): the node area cut and the 2 MB alignment, measured on Sea of Stars
 #   (above). nninitStartup (main+0x8b66a0) calls StandardAllocator::Initialize(nullptr, pool − used) with virtual address memory, which aborted at sdk+0x126440 (Initialize+0xc0). The
 #   constructor is at sdk+0x134718, the placement at sdk+0x1348b0. Unity 2021.3's virtual allocator (main+0x48deb0 → main+0x12e12c0) reserves N MB + 252 KB and aligns its blocks to 256 KB
@@ -150,6 +104,21 @@ CUTS = {
 # - 2d369d99…: Pokémon Brilliant Diamond 1.3.0 (v393216) sdk (SDK 11.4.3, Unity 2019.4): the node area cut, and now the 2 MB alignment (run on the game with the iPhone's alias region,
 #   2026-11-09). nninitStartup (main+0x2c1d5c) gives pool − used to StandardAllocator with virtual address memory, whose first CentralHeap::Init aborted at sdk+0x2f98e4: the 1 GB node
 #   area left no room for the 1 GB-aligned 3.14 GB reservation. The constructor is at sdk+0x34e0b8, the placement's constants at sdk+0x34e2bc / +0x34e2c4 / +0x34e2c8
+# - 311deab1…: Ace Attorney Investigations Collection 1.0.0.2 (v131072) sdk (SDK 17.5.3, Unity 2022.3): the node area cut, and now the 2 MB alignment (run on the game with the
+#   iPhone's alias region, DM_ALIAS_SIZE=0x118000000, 2026-11-09: 240 s from a fresh save to its language dialog, the gaps between live regions 0.33 → 0.19 GB). Without the node area
+#   cut nninitStartup's StandardAllocator::Initialize(nullptr, pool − used) (main+0x874b6c, virtual address memory) aborted at its first CentralHeap::Init. The constructor is at
+#   sdk+0x139458, the placement's constants at sdk+0x139654 / +0x13965c / +0x139660
+# - 12f16103…: Brain Memory Training Academy 1.0.0 (v0) sdk (SDK 16.2.4, the same build as Unicorn Overlord 1.05's, which has no virtual address memory): the node area cut, and now
+#   the 2 MB alignment (run on the game, as above, 2026-11-09: 240 s to its title menu, gaps 0.35 → 0.22 GB). nninitStartup (main+0x73ad60) calls StandardAllocator::Initialize(nullptr,
+#   pool − used) with virtual address memory, which aborted at its CentralHeap::Init without the node area cut. The constructor is at sdk+0x134768, the placement's constants at
+#   sdk+0x134964 / +0x13496c / +0x134970
+# - 9c73fb73…: Patrick's Parabox 1.0.1 (v65536) sdk (SDK 13.3.7, Unity 2020.3.30f1): the node area cut, and now the 2 MB alignment (run on the game, as above, 2026-11-09: 240 s to its
+#   language select, gaps 0.19 → 0.11 GB). nninitStartup (main+0x1cd010) calls StandardAllocator::Initialize(nullptr, pool − used) with virtual address memory, which aborted at its
+#   CentralHeap::Init (sdk+0x324dec) without the node area cut. The constructor is at sdk+0x37c3a0, the placement's constants at sdk+0x37c5a4 / +0x37c5ac / +0x37c5b0
+# - e01950c5…: Hollow Knight: Silksong 1.0.30000 (v655360) sdk (SDK 20.5.8, Unity 6000.0.50f1): the node area cut, exactly (rewritten byte-identical with the rules, 2026-11-09; SDK 20's
+#   placement aligns to 2 MB itself, so the alignment rule finds nothing). Unity 6 takes all its memory itself through nn::os::AllocateAddressRegion and AllocateMemoryPages, and without
+#   the cut its regions start after the node area: the alias region's high-water mark was +1.00 GB at nninitStartup and +3.00 GB in the first room of play, with 1.51 GB mapped. The
+#   constructor is at sdk+0x145bec (the movs at +0x145bfc and +0x145c68)
 node_area, alignment = 'AddressRegionManager node area 1 GB → 62 MB', 'AllocateAddressRegion: regions of 4 MB and more aligned to 2 MB, as SDK 20'
 def mov(old, value):   # the original mov / orr of a constant, as the registered reasons name it (its destination register: the word's low 5 bits)
     rd = int(old[:2], 16) & 31
@@ -164,7 +133,29 @@ def align(size, fingerprints, old_32m, old_1g, old_4m):   # the three large clas
         (0x64, old_32m, '0b04a052', f'AllocateAddressRegion: alignment of regions from 32 MB to 1 GB {mov(old_32m, 0x2000000)} → mov w11,#0x200000 (2 MB, as SDK 20)'),
         (0x6c, old_1g, '0a04a052', f'AllocateAddressRegion: alignment of regions of 1 GB and more {mov(old_1g, 0x40000000)} → mov w10,#0x200000 (2 MB, as SDK 20)'),
         (0x70, old_4m, '0804a052', f'AllocateAddressRegion: alignment of regions from 4 MB to 32 MB {mov(old_4m, 0x400000)} → mov w8,#0x200000 (2 MB, as SDK 20)')]}
+
+
+old_vamm = 'Older VammManager: 64 MB node area and 32 MB large-region alignment'
+
+
+def vamm(node_size, occupied, node_fingerprint, align_fingerprint):
+    """Older VammManager implementations reserve a full 1 GB of nodes. Cut both functions together so Snowdrop's region fits on iPhone after its metadata."""
+    return {'name': old_vamm, 'functions': [
+        {'size': node_size, 'fingerprints': [node_fingerprint], 'cuts': [
+            (0x24, 'e9030232', '0980a052', 'VammManager node area limit: 1 GB to 64 MB'),
+            (occupied, 'ea030232', '0a80a052', 'VammManager occupied node area: 1 GB to 64 MB'),
+        ]},
+        {'size': 328, 'fingerprints': [align_fingerprint], 'cuts': [
+            (0x60, 'ea030232', '0a40a052', 'AllocateAddressRegion: align regions of 1 GB and more to 32 MB'),
+        ]},
+    ]}
+
+
 MATCH_CUTS = {'sdk': [
+    # SDK 3.5.1 (South Park 1.0 / 1.05). Reproduces all three original cut sites and replacement bytes.
+    vamm(288, 0xb8, '1afa13cc6a6b823fde0b57f324da45b2dfbebfacb0d8dd09158a150d3d006609', '3726c7d94ae67a37e2c30df6ccf76e8ca7e9204a83b05cedb7a7631e8b3b5bab'),
+    # SDK 4.4.0 (Kingdom Battle 1.9.589692). Reproduces all three original cut sites and replacement bytes.
+    vamm(284, 0xb4, '4f75a781115b851e83adab390e7280d2b83750be14c5bee8e3936ebdbae14164', '4b4883a77c04ac0837a0d879215e7fdcd52796ed2dad6086adbbdbf5cb5d4dbb'),
     # SDK 7.3.2 (DRAGON QUEST XI S), 8.2.1 (Super Smash Bros. Ultimate), 8.3.1 (Paper Mario: The Origami King)
     node(276, ['5c81bb821d119d00ffcda6c3a4f1b827fc08c084fa53995e3a6262b5bf37cded'], 0x10, 'e9230b32', '097ca052', 0xb0, 'e9230b32', '097ca052'),
     # SDK 10.4.1 (Advance Wars 1+2), 10.4.8 (Pikmin 4)
@@ -186,6 +177,10 @@ MATCH_CUTS = {'sdk': [
     # SDK 19.3.3 (Mario Kart World), 20.5.15 (Yoshi and the Mysterious Book, Hyrule Warriors: Age of Imprisonment), 20.5.19 (Donkey Kong Bananza) built for the Switch 2: the constructor at sdk+0x14df00 on 20.5.15, with
     # return address signing. Unreal's engine region takes what the alias region has room for, counting on the 62 MB (alias_room): with 1 GB nninitStartup's AllocateAddressRegion fails and it exits
     node(300, ['224e86858a769644c9ebfe39c77e214c7ac5f853c156118dd3136eba25ed64bf'], 0x18, '08fca752', '087ca052', 0xa4, '09fca752', '097ca052'),
+    # SDK 21.4.1 (Sonic Frontiers Definitive Edition), 21.4.2 (Orbitals), 21.4.3 (Resident Evil 4), 21.4.4 (Splatoon Raiders) built for the Switch 2: the constructor at sdk+0x16db70
+    # in all four, with return address signing: the 20.5 build's instructions in another order, with 32 more bytes on its cold path (an abort code per failing result). Unreal's
+    # engine region counts on the 62 MB (alias_room), as Yoshi and the Mysterious Book's. Region placement aligns to 64 KB or 2 MB only (sdk+0x16dd14), as SDK 20
+    node(332, ['6d2c1d5b09b45ecc467fb4a5d7a4c7c88015ba19798969418def4eaf83e6774d'], 0x18, '08fca752', '087ca052', 0xa4, '09fca752', '097ca052'),
     # SDK 7.3.2 (DRAGON QUEST XI S), 8.2.1 (Super Smash Bros. Ultimate), 8.3.1 (Paper Mario: The Origami King), 10.4.1 (Advance Wars 1+2), 10.4.8 (Pikmin 4)
     align(352, ['006abd214d94c93386735550cee4fe7708bc1f0d1812663123cfa3b9611f1533', '42167e4d3c710e11937e45a9e420fdd0ed9a410386c17da4d1d896b847d3b0d6'], 'eb030732', 'ea030232', 'e8030a32'),
     # SDK 11.4.0 (Pokémon Legends: Arceus, Kirby and the Forgotten Land): the next rule's size classes with 8 more bytes of body; the 4 GB StandardAllocator region of Arceus's nninitStartup
@@ -203,14 +198,7 @@ BINDING = [
     {'what': 'node area 1 GB → 62 MB and regions of 4 MB and more aligned to 2 MB, as SDK 20: the SDK-wide rules', 'now': 'sdk', 'goal': 'sdk', 'purpose': 'address space',
      'checked': '20 registered builds rewritten byte-identical with the rules alone, 2026-10-29 and 2026-10-30; the 2 MB alignment on every sdk build on the drive, 2026-10-30',
      'why': 'one rule per reviewed implementation; every sdk build without CUTS gets them'},
-    {'what': 'rows the rules would add the alignment cuts to (12f16103, 311deab1)', 'now': 'build', 'goal': 'sdk', 'purpose': 'address space',
-     'checked': "the rules resolved on each build's sdk, 2026-10-29 and 2026-10-30",
-     'why': 'the rules give these builds the same node area cut and the three alignment cuts more; each row keeps the alignment out',
-     'blocked': 'the games that reach them (Brain Memory Training Academy; Ace Attorney Investigations Collection) have no Mac build: run one per build with the alignment cuts'},
-    {'what': 'rows of builds not on the game drive (9c73fb73, e01950c5)', 'now': 'build', 'goal': 'sdk', 'purpose': 'address space',
-     'why': 'likely what the rules give (each names one of their implementations)',
-     'blocked': 'no copy on the drive to compare'},
-    {'what': 'VammManager node area and alignment, SDK 4.4.0 (9de92bad)', 'now': 'build', 'goal': 'sdk', 'purpose': 'address space',
-     'why': 'an older implementation no rule covers (its large regions aligned to 32 MB, not the rules\' 2 MB); a rule once a second game ships it',
-     'blocked': 'one game ships it'},
+    {'what': old_vamm, 'now': 'sdk', 'goal': 'sdk', 'purpose': 'address space',
+     'why': 'the two older SDK implementations need smaller reservations and alignment to fit the iPhone alias region after the Snowdrop metadata reservation',
+     'checked': 'both function pairs reproduced all three exact cuts on the two original SDK builds, with six more equivalent implementations found in 48 distinct SDK builds'},
 ]

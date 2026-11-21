@@ -8,7 +8,14 @@
 #undef g_ft
 #define P(name) ((NVNT_##name)nvn_lookup(#name))
 void *front_metal_layer(void) { return NULL; }
-module_t *module_of(const void *p) { (void)p; return NULL; }
+static int staged_call;
+module_t *module_of(const void *p) {
+    static module_t main = {.name = "main"};
+    if (!staged_call) return NULL;
+    main.base = (uint8_t *)((uintptr_t)p - DM_GAME_TEX_COPY_STAGING_PC);
+    snprintf(main.build_id, sizeof main.build_id, "%s", DM_GAME_TEX_COPY_STAGING_BUILD);
+    return &main;
+}
 module_t *g_mod; int g_nmod;
 void svc_thread_dump(void) {}
 uint64_t now_ns(void) { return bp_now(); }
@@ -79,7 +86,7 @@ static NVNcommandHandle record(NVNtexture *texture, NVNprogram *program, int wai
     return P(nvnCommandBufferEndRecording)(&command);
 }
 int main(void) { @autoreleasepool {
-    setbuf(stdout, NULL); mtl_init(); NSError *error = nil;
+    if (setvbuf(stdout, NULL, _IONBF, 0)) abort(); mtl_init(); NSError *error = nil;
     id<MTLLibrary> library = [g_dev newLibraryWithSource:@"#include <metal_stdlib>\nusing namespace metal;\n"
         "vertex float4 v(uint i [[vertex_id]]) { const float2 p[] = {float2(-1,-1),float2(3,-1),float2(-1,3)}; return float4(p[i],0.5,1); }\n"
         "fragment float4 red() { return float4(1,0,0,1); } fragment float4 green() { return float4(0,1,0,1); }\n"
@@ -129,6 +136,31 @@ int main(void) { @autoreleasepool {
     P(nvnCommandBufferCopyTextureToBuffer)(&command, &replacement, NULL, &region, output + BYTES, 0);
     submit(0, P(nvnCommandBufferEndRecording)(&command), &sync); finish(&sync);
     CHECK(pixels(BYTES, 0, 0, 255), "queued draw did not write the replacement texture's backing");
+
+    if (DM_GAME_TEX_COPY_STAGING_PC) {
+        puts("CASE staging source reused before the command is submitted");
+        const size_t source = EVENT + 0x1000;
+        for (size_t i = 0; i < BYTES; i += 4) memcpy(memory + source + i, (uint8_t[]){255, 0, 0, 255}, 4);
+        P(nvnCommandBufferBeginRecording)(&command);
+        staged_call = 1;
+        P(nvnCommandBufferCopyBufferToTexture)(&command, (uintptr_t)(memory + source), &target, NULL, &region, 0);
+        staged_call = 0;
+        P(nvnCommandBufferCopyTextureToBuffer)(&command, &target, NULL, &region, output, 0);
+        NVNcommandHandle staged = P(nvnCommandBufferEndRecording)(&command);
+        memset(memory + source, 0, BYTES);
+        submit(0, staged, &sync); finish(&sync);
+        CHECK(pixels(0, 255, 0, 0), "staged upload uses record-time bytes after the resource thread reuses them");
+        submit(0, staged, &sync); finish(&sync);
+        CHECK(pixels(0, 255, 0, 0), "staged upload survives resubmitting the same handle");
+
+        P(nvnCommandBufferBeginRecording)(&command);
+        P(nvnCommandBufferCopyBufferToTexture)(&command, (uintptr_t)(memory + source), &target, NULL, &region, 0);
+        P(nvnCommandBufferCopyTextureToBuffer)(&command, &target, NULL, &region, output, 0);
+        NVNcommandHandle ordinary = P(nvnCommandBufferEndRecording)(&command);
+        for (size_t i = 0; i < BYTES; i += 4) memcpy(memory + source + i, (uint8_t[]){0, 0, 255, 255}, 4);
+        submit(0, ordinary, &sync); finish(&sync);
+        CHECK(pixels(0, 0, 0, 255), "an ordinary upload still reads the live buffer in command order");
+    }
 
     P(nvnQueueFinish)(&queues[0]); P(nvnQueueFinish)(&queues[1]);
     P(nvnProgramFinalize)(&reused); P(nvnProgramFinalize)(&stable_red); P(nvnProgramFinalize)(&stable_green);

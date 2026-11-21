@@ -43,11 +43,12 @@ def _proj(msl, var, comp, locn):
     return src(m.group(1), comp) if m and src(m.group(1), comp) == src(m.group(2), 'w') else None
 
 _UNI = re.compile(r'\(\*spvDescriptorSet0\.fp_c(\d+)\)\._m0\[(\d+)\]\.([xyzw])')
+
 _SCALE = '(*spvDescriptorSet0.support_buffer)._m5[0].x'   # the support buffer's render scale (Ryujinx's layout), which the host fills with 1 (nvn_mtl.m support buffer)
 
 def _frag_pos(msl, var, comp):
     """var = gl_FragCoord.<comp> [/ render scale] * U (either order), U a fragment uniform component, each name assigned once → [uniform slot, vector, component] (fp_cN is slot N − 3,
-    as dmsh_build.py raster_facts reads vp_cN), or None"""
+    as dmsh_reflect.py raster_facts reads vp_cN), or None"""
     def one(n, pat):
         m = re.search(r'float %s = %s;' % (re.escape(n), pat), msl)
         return m if m and _once(msl, n) else None
@@ -200,7 +201,7 @@ def fold(msl, bindings, om_only_ok=False):
     tex = {m.group(1) for m in re.finditer(r'texture2d<float> (\w+) \[\[id\(\d+\)\]\];', src)}
     locn = {m.group(1): int(m.group(2)) for m in re.finditer(r'float4 (m_\d+) \[\[user\(locn(\d+)\)\]\];', src.split('struct main0_in', 1)[-1].split('};', 1)[0])}
     reg = {b['msl_name']: b['reg'] for b in bindings if b.get('kind') == abi.KIND_TEX and b.get('msl_name') and b.get('reg') is not None}
-    # A sample the border colour correction wrapped (dmsh_build.py border_emu) is taken whole: a tile read replaces the corrected sample, never feeds the correction
+    # A sample the border colour correction wrapped (dmsh_rewrite.py border_emu) is taken whole: a tile read replaces the corrected sample, never feeds the correction
     pat = re.compile(r'(dm_bs\()?spvDescriptorSet0\.(\w+)\.sample\(spvDescriptorSet0\.(\w+)Smplr, select\((_\d+), float2\(0\.0\), isnan\(\4\)\)\)'
                      r'(?(1), spvDescriptorSet0\.%s, \d+u, spvDescriptorSet0\.\2, spvDescriptorSet0\.\3Smplr%s, select\(\4, float2\(0\.0\), isnan\(\4\)\)\))' % (abi.BORDER_MEMBER, abi.BORDER_TWIN))
     calls, out_parts, pos = [], [], 0
