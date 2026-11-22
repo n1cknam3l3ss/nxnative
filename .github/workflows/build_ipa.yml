@@ -86,7 +86,18 @@ jobs:
             if [[ "$url" =~ (drive\.google\.com|docs\.google\.com) ]]; then
               echo "Google Drive link detected: $url"
               python3 -m pip install --quiet gdown
-              python3 -m gdown --fuzzy "$url" -O "input_nsp/${prefix}_dl"
+              python3 -c "
+import gdown, re, sys, os
+url = sys.argv[1]
+out = sys.argv[2]
+m = re.search(r'/d/([a-zA-Z0-9_-]+)', url) or re.search(r'id=([a-zA-Z0-9_-]+)', url)
+file_id = m.group(1) if m else url
+print(f'Downloading Google Drive file ID: {file_id}')
+res = gdown.download(id=file_id, output=out, quiet=False)
+if not res or not os.path.exists(out):
+    print(f'Retrying with raw URL: {url}')
+    gdown.download(url=url, output=out, quiet=False)
+" "$url" "input_nsp/${prefix}_dl"
               python3 -c "
           import os, sys
           p = 'input_nsp/${prefix}_dl'
