@@ -436,8 +436,8 @@ for ln in open(MAP):
         if c[2] in ('rt', 'raytracing'): RT_KEYS.add(c[3])
 if os.path.exists(MAP + '.conflicts.tsv'):
     for ln in open(MAP + '.conflicts.tsv'):
-    c = ln.rstrip('\n').split('\t')
-    if len(c) > 1 and not ln.startswith('#') and not ln.startswith('dm_') and c[0] in pc_of: pc_of[c[0]] = c[1]
+        c = ln.rstrip('\n').split('\t')
+        if len(c) > 1 and not ln.startswith('#') and not ln.startswith('dm_') and c[0] in pc_of: pc_of[c[0]] = c[1]
 
 def vertex_ab(key, code, ctl):
     """Merge Maxwell's type-0 VertexA and type-1 VertexB as Ryujinx does. Control +0x748 lists each part's SPH offset and length from the SPH.
