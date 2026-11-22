@@ -271,9 +271,13 @@ static bool rpc_send_activity(void) {
 
     if (*g_rpc.image_override) {
         escape_json_string(g_rpc.image_override, esc_large_image, sizeof(esc_large_image));
+    } else if (*g_rpc.game_id && strcmp(g_rpc.game_id, "0000000000000000") != 0) {
+        // Universal Switch TitleDB cover repository: serves 1024x1024 official artwork for all 10,000+ Switch titles
+        char url[256];
+        snprintf(url, sizeof(url), "https://tinfoil.media/ti/%s/0/0/", g_rpc.game_id);
+        escape_json_string(url, esc_large_image, sizeof(esc_large_image));
     } else {
-        // Lowercase title ID matches Ryujinx's Discord app asset database
-        escape_json_string(g_rpc.game_id_lower, esc_large_image, sizeof(esc_large_image));
+        escape_json_string("nintendoswitch", esc_large_image, sizeof(esc_large_image));
     }
     int64_t start_time = g_rpc.start_time;
     pthread_mutex_unlock(&g_rpc.mu);

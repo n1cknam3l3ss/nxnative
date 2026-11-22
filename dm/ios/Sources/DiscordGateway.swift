@@ -165,11 +165,18 @@ public final class DiscordGateway: NSObject, URLSessionWebSocketDelegate {
         if !currentDesc.isEmpty {
             act["details"] = currentDesc
         }
-        if !gameId.isEmpty {
-            act["state"] = gameId
-            let lowerId = gameId.lowercased()
+        let cleanId = gameId.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if !cleanId.isEmpty {
+            act["state"] = cleanId
+            let imageURL: String
+            if let customImg = ProcessInfo.processInfo.environment["DM_DISCORD_IMAGE"], !customImg.isEmpty {
+                imageURL = customImg
+            } else {
+                // Universal Switch TitleDB cover repository: serves 1024x1024 official artwork for all 10,000+ Switch titles
+                imageURL = "https://tinfoil.media/ti/\(cleanId)/0/0/"
+            }
             act["assets"] = [
-                "large_image": lowerId,
+                "large_image": imageURL,
                 "large_text": gameName.isEmpty ? "Nintendo Switch" : gameName
             ]
         }
