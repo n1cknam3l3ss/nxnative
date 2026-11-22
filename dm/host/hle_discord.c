@@ -22,6 +22,17 @@
 #include <sys/un.h>
 #endif
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
+
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+extern void dm_discord_ios_start(const char *name, const char *id);
+extern void dm_discord_ios_set_status(const char *desc);
+extern void dm_discord_ios_stop(void);
+extern bool dm_discord_ios_has_token(void);
+#endif
+
 // Default public Ryujinx Switch Discord Client ID containing rich pre-uploaded game assets by title ID.
 // Override via environment variable DM_DISCORD_CLIENT_ID.
 #define DEFAULT_CLIENT_ID "701019662778155068"
@@ -433,11 +444,25 @@ void dm_discord_rpc_init(const char *game_name, const char *game_id) {
 
     atexit(dm_discord_rpc_stop);
 
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    if (dm_discord_ios_has_token()) {
+        rpc_log("Starting iOS Discord Gateway WebSocket");
+        dm_discord_ios_start(g_rpc.game_name, g_rpc.game_id);
+        return;
+    }
+#endif
+
     pthread_create(&g_rpc.thread, NULL, rpc_worker_thread, NULL);
 }
 
 void dm_discord_rpc_set_status(const char *desc) {
     if (!atomic_load(&g_rpc.initialized) || atomic_load(&g_rpc.stopped) || !desc) return;
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    if (dm_discord_ios_has_token()) {
+        dm_discord_ios_set_status(desc);
+        return;
+    }
+#endif
     pthread_mutex_lock(&g_rpc.mu);
     strncpy(g_rpc.pending_desc, desc, sizeof(g_rpc.pending_desc) - 1);
     g_rpc.pending_desc[sizeof(g_rpc.pending_desc) - 1] = '\0';
@@ -447,6 +472,11 @@ void dm_discord_rpc_set_status(const char *desc) {
 
 void dm_discord_rpc_commit(void) {
     if (!atomic_load(&g_rpc.initialized) || atomic_load(&g_rpc.stopped)) return;
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    if (dm_discord_ios_has_token()) {
+        return;
+    }
+#endif
     atomic_store(&g_rpc.desc_dirty, 1);
     pthread_mutex_lock(&g_rpc.mu);
     pthread_cond_signal(&g_rpc.cond);
@@ -455,6 +485,12 @@ void dm_discord_rpc_commit(void) {
 
 void dm_discord_rpc_stop(void) {
     if (!atomic_load(&g_rpc.initialized) || atomic_exchange(&g_rpc.stopped, 1)) return;
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    if (dm_discord_ios_has_token()) {
+        dm_discord_ios_stop();
+        return;
+    }
+#endif
     pthread_mutex_lock(&g_rpc.mu);
     pthread_cond_broadcast(&g_rpc.cond);
     pthread_mutex_unlock(&g_rpc.mu);

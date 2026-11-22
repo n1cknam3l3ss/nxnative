@@ -96,6 +96,78 @@ private struct DocumentPicker: UIViewControllerRepresentable {
     }
 }
 
+/// Discord Rich Presence section for iPhone launcher: shows login state and provides QR/web login sheet
+private struct DiscordPresenceSection: View {
+    @State private var token: String = UserDefaults.standard.string(forKey: "discord_token") ?? ""
+    @State private var username: String = UserDefaults.standard.string(forKey: "discord_username") ?? ""
+    @State private var showLogin = false
+    @State private var showManualAlert = false
+    @State private var manualToken = ""
+
+    var body: some View {
+        Section("Discord") {
+            if !token.isEmpty {
+                HStack {
+                    Label(username.isEmpty ? "Connected" : "@\(username)", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Spacer()
+                    Button("Log out", role: .destructive) {
+                        UserDefaults.standard.removeObject(forKey: "discord_token")
+                        UserDefaults.standard.removeObject(forKey: "discord_username")
+                        token = ""
+                        username = ""
+                    }
+                }
+            } else {
+                Button {
+                    showLogin = true
+                } label: {
+                    Label("Log in to Discord…", systemImage: "bubble.left.and.bubble.right.fill")
+                }
+                .sheet(isPresented: $showLogin) {
+                    DiscordLoginSheet(isPresented: $showLogin) { newToken, newUsername in
+                        UserDefaults.standard.set(newToken, forKey: "discord_token")
+                        UserDefaults.standard.set(newUsername, forKey: "discord_username")
+                        token = newToken
+                        username = newUsername
+                    }
+                }
+                Button {
+                    manualToken = ""
+                    showManualAlert = true
+                } label: {
+                    Text("Or enter Discord token manually…")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .alert("Discord Token", isPresented: $showManualAlert) {
+                    TextField("User Token", text: $manualToken)
+                    Button("Save") {
+                        let clean = manualToken.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !clean.isEmpty {
+                            UserDefaults.standard.set(clean, forKey: "discord_token")
+                            token = clean
+                            DiscordGateway.fetchUserProfile(token: clean) { name in
+                                DispatchQueue.main.async {
+                                    if let n = name {
+                                        UserDefaults.standard.set(n, forKey: "discord_username")
+                                        username = n
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                }
+            }
+        } footer: {
+            Text(token.isEmpty
+                 ? "Log in to display your game status, game icon and live in-game location on Discord while playing."
+                 : "Rich Presence active: displays game status, original cover art and dynamic in-game location directly from iPhone.")
+        }
+    }
+}
+
 private struct LauncherView: View {
     @ObservedObject var m: LauncherModel
     let play: () -> Void
@@ -143,6 +215,7 @@ private struct LauncherView: View {
                     }
                     // The background save check reads the selected folder until it returns.
                     CloudSavesSection(checking: checking)
+                    DiscordPresenceSection()
                     Section {
                         HStack {
                             Text("Memory available")
