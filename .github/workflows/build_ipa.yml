@@ -79,7 +79,15 @@ jobs:
           fi
 
       - name: Download NSP if URL provided
+        env:
+          GDRIVE_COOKIES: ${{ secrets.GDRIVE_COOKIES }}
         run: |
+          if [ -n "$GDRIVE_COOKIES" ]; then
+            echo "$GDRIVE_COOKIES" > cookies.txt
+            export GDRIVE_COOKIES_PATH="$PWD/cookies.txt"
+            echo "Google Drive cookies configured."
+          fi
+
           download_pkg() {
             local url="$1"
             local prefix="$2"
@@ -111,6 +119,7 @@ jobs:
           if [ -n "${{ github.event.inputs.update_download_url }}" ]; then
             download_pkg "${{ github.event.inputs.update_download_url }}" "update"
           fi
+          rm -f cookies.txt
 
       - name: Verify Input Files
         run: |

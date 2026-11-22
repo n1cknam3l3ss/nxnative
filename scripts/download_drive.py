@@ -20,12 +20,19 @@ def main():
     m = re.search(r'/d/([a-zA-Z0-9_-]+)', url_or_id) or re.search(r'id=([a-zA-Z0-9_-]+)', url_or_id)
     file_id = m.group(1) if m else url_or_id
 
+    cookies_file = os.environ.get('GDRIVE_COOKIES_PATH') or ('cookies.txt' if os.path.exists('cookies.txt') else None)
+    kwargs = {'quiet': False}
+    if cookies_file and os.path.exists(cookies_file):
+        print(f"Using Google Drive cookies: {cookies_file} ({os.path.getsize(cookies_file)} bytes)", flush=True)
+        kwargs['use_cookies'] = True
+        kwargs['cookies_file'] = cookies_file
+
     print(f"Downloading from Google Drive: {file_id} -> {out}", flush=True)
-    res = gdown.download(id=file_id, output=out, quiet=False)
+    res = gdown.download(id=file_id, output=out, resume=True, **kwargs)
 
     if not res or not os.path.exists(out) or os.path.getsize(out) == 0:
         print(f"Direct ID download failed, retrying with raw URL...", flush=True)
-        res = gdown.download(url=url_or_id, output=out, quiet=False)
+        res = gdown.download(url=url_or_id, output=out, resume=True, **kwargs)
 
     if not os.path.exists(out) or os.path.getsize(out) == 0:
         print(f"ERROR: Downloaded file '{out}' is missing or empty!", file=sys.stderr)
