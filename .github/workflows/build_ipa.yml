@@ -80,33 +80,52 @@ jobs:
 
       - name: Download NSP if URL provided
         run: |
+          download_pkg() {
+            local url="$1"
+            local prefix="$2"
+            if [[ "$url" =~ (drive\.google\.com|docs\.google\.com) ]]; then
+              echo "Google Drive link detected: $url"
+              python3 -m pip install --quiet gdown
+              python3 -m gdown --fuzzy "$url" -O "input_nsp/${prefix}_dl"
+              python3 -c "
+          import os, sys
+          p = 'input_nsp/${prefix}_dl'
+          if not os.path.exists(p) or os.path.getsize(p) == 0:
+              sys.exit(1)
+          with open(p, 'rb') as f:
+              hdr = f.read(0x200)
+          if hdr.startswith(b'PK\x03\x04'):
+              os.system(f'unzip -q {p} -d input_nsp/ && rm -f {p}')
+          elif hdr.startswith(b'NSZ'):
+              os.rename(p, 'input_nsp/${prefix}.nsz')
+          elif len(hdr) >= 0x104 and hdr[0x100:0x104] == b'HEAD':
+              os.rename(p, 'input_nsp/${prefix}.xci')
+          else:
+              os.rename(p, 'input_nsp/${prefix}.nsp')
+          "
+            elif [[ "$url" == *".zip"* ]]; then
+              echo "Downloading ZIP: $url"
+              curl --http1.1 --retry 20 --retry-delay 3 --retry-all-errors -L -C - "$url" -o input_nsp/game.zip
+              unzip -q input_nsp/game.zip -d input_nsp/ || true
+              rm -f input_nsp/game.zip
+            else
+              local ext="nsp"
+              if [[ "$url" == *".nsz"* ]]; then ext="nsz"; fi
+              if [[ "$url" == *".xci"* ]]; then ext="xci"; fi
+              if [[ "$url" == *".xcz"* ]]; then ext="xcz"; fi
+              echo "Downloading package ($ext): $url"
+              curl --fail --http1.1 --retry 30 --retry-delay 5 --retry-all-errors -L -C - "$url" -o "input_nsp/${prefix}.${ext}"
+            fi
+          }
+
           if [ -n "${{ github.event.inputs.nsp_download_url }}" ]; then
             echo "URL provided, clearing existing input_nsp..."
             rm -rf input_nsp/*
             mkdir -p input_nsp
-            URL="${{ github.event.inputs.nsp_download_url }}"
-            if [[ "$URL" == *".zip"* ]]; then
-              echo "Downloading ZIP: $URL"
-              curl --http1.1 --retry 20 --retry-delay 3 --retry-all-errors -L -C - "$URL" -o input_nsp/game.zip
-              unzip -q input_nsp/game.zip -d input_nsp/ || true
-              rm -f input_nsp/game.zip
-            else
-              EXT="nsp"
-              if [[ "$URL" == *".nsz"* ]]; then EXT="nsz"; fi
-              if [[ "$URL" == *".xci"* ]]; then EXT="xci"; fi
-              if [[ "$URL" == *".xcz"* ]]; then EXT="xcz"; fi
-              echo "Downloading Base package ($EXT): $URL"
-              curl --fail --http1.1 --retry 30 --retry-delay 5 --retry-all-errors -L -C - "$URL" -o "input_nsp/base.$EXT"
-            fi
+            download_pkg "${{ github.event.inputs.nsp_download_url }}" "base"
           fi
           if [ -n "${{ github.event.inputs.update_download_url }}" ]; then
-            U_URL="${{ github.event.inputs.update_download_url }}"
-            U_EXT="nsp"
-            if [[ "$U_URL" == *".nsz"* ]]; then U_EXT="nsz"; fi
-            if [[ "$U_URL" == *".xci"* ]]; then U_EXT="xci"; fi
-            if [[ "$U_URL" == *".xcz"* ]]; then U_EXT="xcz"; fi
-            echo "Downloading Update package ($U_EXT): $U_URL"
-            curl --fail --http1.1 --retry 30 --retry-delay 5 --retry-all-errors -L -C - "$U_URL" -o "input_nsp/update.$U_EXT"
+            download_pkg "${{ github.event.inputs.update_download_url }}" "update"
           fi
 
       - name: Verify Input Files
