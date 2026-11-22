@@ -191,6 +191,13 @@ jobs:
       - name: Prepare Release Assets (Split if > 2GB)
         if: success()
         run: |
+          # If romfs separate mode was used, also prepare romfs.img for download
+          for r in $(find input_nsp -name "RomFS.img" 2>/dev/null); do
+            echo "Found RomFS image at $r, preparing for release..."
+            cp "$r" ./romfs.img
+            break
+          done
+
           for f in input_nsp/*.ipa *.ipa; do
             [ -f "$f" ] || continue
             size=$(stat -f%z "$f" 2>/dev/null || stat -c%s "$f" 2>/dev/null)
@@ -213,7 +220,7 @@ jobs:
           echo "Creating or ensuring release $TAG..."
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TITLE" --notes "nxnative automated release" || true
           echo "Uploading release assets sequentially..."
-          for f in $(ls -1 input_nsp/*.part* input_nsp/*.ipa *.part* *.ipa 2>/dev/null | sort -u); do
+          for f in $(ls -1 input_nsp/*.part* input_nsp/*.ipa *.part* *.ipa romfs.img 2>/dev/null | sort -u); do
             [ -f "$f" ] || continue
             echo "Uploading asset $f..."
             gh release upload "$TAG" "$f" --clobber
