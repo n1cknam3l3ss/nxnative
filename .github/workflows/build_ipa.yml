@@ -52,7 +52,6 @@ jobs:
           key: shader-cache-${{ github.event.inputs.cache_tag || 'totk' }}-${{ github.run_id }}
           restore-keys: |
             shader-cache-${{ github.event.inputs.cache_tag || 'totk' }}-
-            shader-cache-
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
