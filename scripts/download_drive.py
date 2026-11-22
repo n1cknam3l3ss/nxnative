@@ -42,7 +42,7 @@ def main():
 
     # Magic inspection and renaming
     with open(out, 'rb') as f:
-        hdr = f.read(0x200)
+        hdr = f.read(65536)
 
     out_dir = os.path.dirname(out) or '.'
     base_name = os.path.basename(out)
@@ -51,13 +51,15 @@ def main():
     if hdr.startswith(b'PK\x03\x04'):
         print(f"Detected ZIP archive, extracting into {out_dir}...", flush=True)
         os.system(f'unzip -q "{out}" -d "{out_dir}" && rm -f "{out}"')
-    elif hdr.startswith(b'NSZ'):
-        target = os.path.join(out_dir, f"{prefix}.nsz")
-        print(f"Detected NSZ file, renaming to {target}...", flush=True)
-        os.rename(out, target)
     elif len(hdr) >= 0x104 and hdr[0x100:0x104] == b'HEAD':
-        target = os.path.join(out_dir, f"{prefix}.xci")
-        print(f"Detected XCI file, renaming to {target}...", flush=True)
+        ext = 'xcz' if b'.ncz' in hdr else 'xci'
+        target = os.path.join(out_dir, f"{prefix}.{ext}")
+        print(f"Detected {ext.upper()} file, renaming to {target}...", flush=True)
+        os.rename(out, target)
+    elif hdr.startswith(b'PFS0') or hdr.startswith(b'NSZ'):
+        ext = 'nsz' if (b'.ncz' in hdr or hdr.startswith(b'NSZ')) else 'nsp'
+        target = os.path.join(out_dir, f"{prefix}.{ext}")
+        print(f"Detected {ext.upper()} file, renaming to {target}...", flush=True)
         os.rename(out, target)
     else:
         target = os.path.join(out_dir, f"{prefix}.nsp")
