@@ -86,34 +86,7 @@ jobs:
             if [[ "$url" =~ (drive\.google\.com|docs\.google\.com) ]]; then
               echo "Google Drive link detected: $url"
               python3 -m pip install --quiet gdown
-              python3 -c "
-              import gdown, re, sys, os
-              url = sys.argv[1]
-              out = sys.argv[2]
-              m = re.search(r'/d/([a-zA-Z0-9_-]+)', url) or re.search(r'id=([a-zA-Z0-9_-]+)', url)
-              file_id = m.group(1) if m else url
-              print(f'Downloading Google Drive file ID: {file_id}')
-              res = gdown.download(id=file_id, output=out, quiet=False)
-              if not res or not os.path.exists(out):
-                  print(f'Retrying with raw URL: {url}')
-                  gdown.download(url=url, output=out, quiet=False)
-              " "$url" "input_nsp/${prefix}_dl"
-              python3 -c "
-          import os, sys
-          p = 'input_nsp/${prefix}_dl'
-          if not os.path.exists(p) or os.path.getsize(p) == 0:
-              sys.exit(1)
-          with open(p, 'rb') as f:
-              hdr = f.read(0x200)
-          if hdr.startswith(b'PK\x03\x04'):
-              os.system(f'unzip -q {p} -d input_nsp/ && rm -f {p}')
-          elif hdr.startswith(b'NSZ'):
-              os.rename(p, 'input_nsp/${prefix}.nsz')
-          elif len(hdr) >= 0x104 and hdr[0x100:0x104] == b'HEAD':
-              os.rename(p, 'input_nsp/${prefix}.xci')
-          else:
-              os.rename(p, 'input_nsp/${prefix}.nsp')
-          "
+              python3 scripts/download_drive.py "$url" "input_nsp/${prefix}_dl"
             elif [[ "$url" == *".zip"* ]]; then
               echo "Downloading ZIP: $url"
               curl --http1.1 --retry 20 --retry-delay 3 --retry-all-errors -L -C - "$url" -o input_nsp/game.zip
