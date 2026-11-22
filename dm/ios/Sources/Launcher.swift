@@ -105,7 +105,7 @@ private struct DiscordPresenceSection: View {
     @State private var manualToken = ""
 
     var body: some View {
-        Section("Discord") {
+        Section {
             if !token.isEmpty {
                 HStack {
                     Label(username.isEmpty ? "Connected" : "@\(username)", systemImage: "checkmark.circle.fill")
@@ -160,6 +160,8 @@ private struct DiscordPresenceSection: View {
                     Button("Cancel", role: .cancel) {}
                 }
             }
+        } header: {
+            Text("Discord")
         } footer: {
             Text(token.isEmpty
                  ? "Log in to display your game status, game icon and live in-game location on Discord while playing."
