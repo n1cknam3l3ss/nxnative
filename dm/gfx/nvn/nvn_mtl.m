@@ -17768,12 +17768,20 @@ static void dlss_eval(const p_dlss *c) {
     if ((out.usage & out_use) != out_use) out = tex_upgrade(c->tex[DLSS_OUTPUT], out, out_use, out.pixelFormat);
     if (!e->mask) bias = nil;
     if (bias) {
-        MTLTextureUsage u;
-        if (@available(macOS 27.0, iOS 27.0, *)) u = sc.reactiveMaskTextureUsage;
+        MTLTextureUsage u = 0;
+        if (@available(macOS 27.0, iOS 27.0, *)) {
+            SEL sel = NSSelectorFromString(@"reactiveMaskTextureUsage");
+            if ([(id)sc respondsToSelector:sel]) {
+                NSUInteger (*getter)(id, SEL) = (NSUInteger (*)(id, SEL))[(id)sc methodForSelector:sel];
+                u = (MTLTextureUsage)getter((id)sc, sel);
+            }
+        }
+        if (!u) {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"   // the name before 27, and the only one those systems have
-        else u = sc.reactiveTextureUsage;
+            u = sc.reactiveTextureUsage;
 #pragma clang diagnostic pop
+        }
         if ((bias.usage & u) != u) bias = tex_upgrade(c->tex[DLSS_BIAS], bias, u, bias.pixelFormat);
     }
     id<MTLTexture> expo = c->tex[DLSS_EXPOSURE] ? tex_mtl_replay(c->tex[DLSS_EXPOSURE]) : nil;
@@ -17802,7 +17810,16 @@ static void dlss_eval(const p_dlss *c) {
     // On the real command buffer, the scaler's state set with it: on the encoding thread when it runs (the recording's stand-in has none of MetalFX's calls), where a later
     // evaluation through the same scaler may already have been recorded
     rec_cb_block(g_cb, ^(id<MTL4CommandBuffer> cb) {
-        sc.colorTexture = col; sc.depthTexture = dep; sc.motionTexture = mot; sc.outputTexture = out; sc.exposureTexture = expo; sc.reactiveMaskTexture = bias;
+        sc.colorTexture = col; sc.depthTexture = dep; sc.motionTexture = mot; sc.outputTexture = out; sc.exposureTexture = expo;
+        SEL rmt = NSSelectorFromString(@"setReactiveMaskTexture:");
+        SEL rt = NSSelectorFromString(@"setReactiveTexture:");
+        if ([(id)sc respondsToSelector:rmt]) {
+            void (*fn)(id, SEL, id) = (void (*)(id, SEL, id))[(id)sc methodForSelector:rmt];
+            fn((id)sc, rmt, bias);
+        } else if ([(id)sc respondsToSelector:rt]) {
+            void (*fn)(id, SEL, id) = (void (*)(id, SEL, id))[(id)sc methodForSelector:rt];
+            fn((id)sc, rt, bias);
+        }
         sc.inputContentWidth = iw; sc.inputContentHeight = ih;
         if (@available(macOS 27.0, iOS 27.0, *)) {   // the rectangles' corners: all at the origin on the game seen, so an older system loses nothing there
             @try {
