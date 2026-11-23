@@ -34,9 +34,9 @@ extern void dm_discord_ios_stop(void);
 extern bool dm_discord_ios_has_token(void);
 #endif
 
-// Default public Ryujinx Switch Discord Client ID containing rich pre-uploaded game assets by title ID.
+// Default public Nintendo Switch Discord Client ID containing rich game presence.
 // Override via environment variable DM_DISCORD_CLIENT_ID.
-#define DEFAULT_CLIENT_ID "701019662778155068"
+#define DEFAULT_CLIENT_ID "1249119754522857616"
 
 #define RPC_OP_HANDSHAKE 0
 #define RPC_OP_FRAME     1

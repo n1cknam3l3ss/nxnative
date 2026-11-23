@@ -8,6 +8,7 @@ import Combine
 
 public final class DiscordGateway: NSObject, URLSessionWebSocketDelegate {
     public static let shared = DiscordGateway()
+    public static let applicationId = "1249119754522857616"
 
     private var webSocketTask: URLSessionWebSocketTask?
     private var heartbeatTimer: Timer?
@@ -17,6 +18,7 @@ public final class DiscordGateway: NSObject, URLSessionWebSocketDelegate {
     private var currentDesc: String = ""
     private var startTime: Int = 0
     private var isIdentified = false
+    private var resolvedLargeImage: String?
     private let queue = DispatchQueue(label: "com.nxnative.discord.gateway", qos: .utility)
 
     public func start(gameName: String, gameId: String) {
@@ -26,7 +28,69 @@ public final class DiscordGateway: NSObject, URLSessionWebSocketDelegate {
         self.gameName = gameName
         self.gameId = gameId
         self.startTime = Int(Date().timeIntervalSince1970)
+
+        let cleanId = gameId.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let rawImage = defaultImageURL(cleanId: cleanId)
+
+        if !cleanId.isEmpty, let cached = UserDefaults.standard.string(forKey: "discord_asset_\(cleanId)"), !cached.isEmpty {
+            self.resolvedLargeImage = cached
+        } else {
+            self.resolvedLargeImage = rawImage
+            if !cleanId.isEmpty {
+                resolveExternalAsset(token: token, imageURL: rawImage, titleId: cleanId)
+            }
+        }
+
         connect(token: token)
+    }
+
+    private func defaultImageURL(cleanId: String) -> String {
+        if let cEnv = getenv("DM_DISCORD_IMAGE"), let sEnv = String(validatingUTF8: cEnv), !sEnv.isEmpty {
+            return sEnv
+        } else if let customImg = ProcessInfo.processInfo.environment["DM_DISCORD_IMAGE"], !customImg.isEmpty {
+            return customImg
+        }
+        return "https://raw.githubusercontent.com/n1cknam3l3ss/nxnative/main/dm/games/\(cleanId)/icon.jpg"
+    }
+
+    private func resolveExternalAsset(token: String, imageURL: String, titleId: String) {
+        guard let url = URL(string: "https://discord.com/api/v9/applications/\(DiscordGateway.applicationId)/external-assets") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue(token, forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Discord iOS", forHTTPHeaderField: "User-Agent")
+        let body: [String: Any] = ["urls": [imageURL]]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        URLSession.shared.dataTask(with: req) { [weak self] data, response, error in
+            guard let self = self, let data = data else { return }
+            var assetPath: String?
+            if let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+               let first = arr.first {
+                assetPath = (first["external_asset_path"] as? String) ?? (first["external_asset_url"] as? String)
+            } else if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                if let assets = dict["assets"] as? [[String: Any]], let first = assets.first {
+                    assetPath = (first["external_asset_path"] as? String) ?? (first["external_asset_url"] as? String)
+                } else {
+                    assetPath = (dict["external_asset_path"] as? String) ?? (dict["external_asset_url"] as? String)
+                }
+            }
+            if let resolved = assetPath, !resolved.isEmpty {
+                fputs("[discord-gateway] registered external asset proxy: \(resolved)\n", stderr)
+                UserDefaults.standard.set(resolved, forKey: "discord_asset_\(titleId)")
+                self.queue.async {
+                    self.resolvedLargeImage = resolved
+                    if self.isIdentified {
+                        self.sendPresenceUpdate()
+                    }
+                }
+            } else {
+                if let httpResp = response as? HTTPURLResponse {
+                    fputs("[discord-gateway] external-assets status: \(httpResp.statusCode)\n", stderr)
+                }
+            }
+        }.resume()
     }
 
     private func connect(token: String) {
@@ -159,7 +223,7 @@ public final class DiscordGateway: NSObject, URLSessionWebSocketDelegate {
         var act: [String: Any] = [
             "name": gameName.isEmpty ? "Nintendo Switch" : gameName,
             "type": 0, // Playing
-            "application_id": "701019662778155068",
+            "application_id": DiscordGateway.applicationId,
             "timestamps": ["start": startTime * 1000]
         ]
         if !currentDesc.isEmpty {
@@ -168,15 +232,7 @@ public final class DiscordGateway: NSObject, URLSessionWebSocketDelegate {
         let cleanId = gameId.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         if !cleanId.isEmpty {
             act["state"] = cleanId
-            let imageURL: String
-            if let cEnv = getenv("DM_DISCORD_IMAGE"), let sEnv = String(validatingUTF8: cEnv), !sEnv.isEmpty {
-                imageURL = sEnv
-            } else if let customImg = ProcessInfo.processInfo.environment["DM_DISCORD_IMAGE"], !customImg.isEmpty {
-                imageURL = customImg
-            } else {
-                // Direct CDN artwork URL ending in .jpg (required by Discord Media Proxy)
-                imageURL = "https://raw.githubusercontent.com/n1cknam3l3ss/nxnative/main/dm/games/\(cleanId)/icon.jpg"
-            }
+            let imageURL = resolvedLargeImage ?? defaultImageURL(cleanId: cleanId)
             act["assets"] = [
                 "large_image": imageURL,
                 "large_text": gameName.isEmpty ? "Nintendo Switch" : gameName
