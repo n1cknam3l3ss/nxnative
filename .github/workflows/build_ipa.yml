@@ -211,6 +211,18 @@ jobs:
             fi
           done
 
+      - name: Push Official Game Icons to Repository
+        if: success()
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain dm/games/*/icon.jpg)" ]; then
+            echo "New official game icons detected, committing to repository..."
+            git add dm/games/*/icon.jpg
+            git commit -m "chore(cdn): preserve official game icon for Discord RPC [skip ci]" || true
+            git push origin main || true
+          fi
+
       - name: Create GitHub Release with IPA
         if: success()
         env:

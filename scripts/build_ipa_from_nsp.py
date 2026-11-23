@@ -3580,6 +3580,16 @@ def main(args=None):
     app_version = app_version_of(game, None if nup else base, g, pkg_ver, nup_label, nup_base=fam['base'] if nup else None)
     if mac_pack and not (args.out or OUT_IPA): out_ipa = work.parent / f'{mac_app_name(app_name)}{"-provisional" if shadowed else ""}.app'
     icon, stand_in = app_icon(user_icon, spare_icon, game, base)
+    if icon and not stand_in and app:
+        try:
+            gdir = repo / 'dm/games' / f'{app:016X}'
+            gdir.mkdir(parents=True, exist_ok=True)
+            gicon = gdir / 'icon.jpg'
+            if not gicon.exists() or gicon.stat().st_size == 0:
+                shutil.copyfile(icon, gicon)
+                say(f'preserved official game icon for Discord RPC: dm/games/{app:016X}/icon.jpg')
+        except Exception:
+            pass
     if (not mac or mac_pack) and getattr(args, 'in_programs', None) is None:   # an app is made, once: a program packed with the application's first (in_programs) is part of its app
         if stand_in: say(f'no game icon: the app takes the fallback icon {spare_icon} (--fallback-icon / FALLBACK_ICON)')
         say_game(app, app_name, app_version or '1.0', bundle_id, None if prepare_xcode else out_ipa, icon)
