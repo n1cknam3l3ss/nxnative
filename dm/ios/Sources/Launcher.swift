@@ -309,7 +309,7 @@ private struct LauncherView: View {
 
     @ViewBuilder var controlsButton: some View {
         Button(action: { showControlsEditor = true }) {
-            Label("ÐÐ°ÑÑ‚Ñ€Ð¾Ð¹ÐºÐ° ÑƒÐ¿Ñ€Ð°Ð²Ð»ÐµÐ½Ð¸Ñ", systemImage: "gamecontroller")
+            Label("Настроить раскладку", systemImage: "gamecontroller")
                 .font(.callout.weight(.medium))
                 .frame(maxWidth: 220)
         }
