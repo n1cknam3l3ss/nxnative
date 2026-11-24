@@ -192,11 +192,19 @@ jobs:
         run: |
           # If romfs separate mode was used, also prepare romfs.img for download
           if [ "${{ github.event.inputs.romfs_mode }}" = "separate" ]; then
-            for r in $(find input_nsp -name "RomFS.img" 2>/dev/null); do
-              echo "Found RomFS image at $r, preparing for release..."
-              cp "$r" ./romfs.img
-              break
-            done
+            TARGET_ROMFS=$(python3 -c '
+import glob, re
+imgs = glob.glob("input_nsp/*_build/extract/*/RomFS.img")
+def ver(p):
+    m = re.search(r"/extract/v(\d+)/RomFS\.img$", p)
+    return int(m.group(1)) if m else -1
+if imgs:
+    print(max(imgs, key=ver))
+')
+            if [ -n "$TARGET_ROMFS" ] && [ -f "$TARGET_ROMFS" ]; then
+              echo "Found RomFS image at $TARGET_ROMFS, preparing for release..."
+              cp "$TARGET_ROMFS" ./romfs.img
+            fi
           fi
 
           for f in input_nsp/*.ipa *.ipa romfs.img; do
