@@ -9,6 +9,7 @@ import Combine
 public final class DiscordGateway: NSObject, URLSessionWebSocketDelegate {
     public static let shared = DiscordGateway()
     public static let applicationId = "1249119754522857616"
+    private static let externalAssetFallbackAppId = "962990036020756480"
 
     private var webSocketTask: URLSessionWebSocketTask?
     private var heartbeatTimer: Timer?
@@ -25,23 +26,36 @@ public final class DiscordGateway: NSObject, URLSessionWebSocketDelegate {
         guard let token = UserDefaults.standard.string(forKey: "discord_token"), !token.isEmpty else {
             return
         }
-        self.gameName = gameName
-        self.gameId = gameId
-        self.startTime = Int(Date().timeIntervalSince1970)
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            self.gameName = gameName
+            self.gameId = gameId
+            self.startTime = Int(Date().timeIntervalSince1970)
 
-        let cleanId = gameId.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        let rawImage = defaultImageURL(cleanId: cleanId)
+            let cleanId = gameId.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            let rawImage = self.defaultImageURL(cleanId: cleanId)
 
-        if !cleanId.isEmpty, let cached = UserDefaults.standard.string(forKey: "discord_asset_\(cleanId)"), !cached.isEmpty {
-            self.resolvedLargeImage = cached
-        } else {
-            self.resolvedLargeImage = rawImage
-            if !cleanId.isEmpty {
-                resolveExternalAsset(token: token, imageURL: rawImage, titleId: cleanId)
+            if !rawImage.hasPrefix("http://") && !rawImage.hasPrefix("https://") {
+                if rawImage.hasPrefix("external/") || rawImage.hasPrefix("attachments/") {
+                    self.resolvedLargeImage = "mp:" + rawImage
+                } else {
+                    self.resolvedLargeImage = rawImage
+                }
+            } else if !cleanId.isEmpty,
+                      let cached = UserDefaults.standard.dictionary(forKey: "discord_mp_asset_\(cleanId)") as? [String: String],
+                      cached["url"] == rawImage,
+                      let asset = cached["asset"],
+                      asset.hasPrefix("mp:") {
+                self.resolvedLargeImage = asset
+            } else {
+                self.resolvedLargeImage = nil
+                if !cleanId.isEmpty {
+                    self.resolveExternalAsset(token: token, imageURL: rawImage, titleId: cleanId)
+                }
             }
-        }
 
-        connect(token: token)
+            self.connect(token: token)
+        }
     }
 
     private func defaultImageURL(cleanId: String) -> String {
@@ -53,50 +67,123 @@ public final class DiscordGateway: NSObject, URLSessionWebSocketDelegate {
         return "https://raw.githubusercontent.com/n1cknam3l3ss/nxnative/main/dm/games/\(cleanId)/icon.jpg"
     }
 
+    private func normalizeProxyAsset(_ raw: String?) -> String? {
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+            return nil
+        }
+        if trimmed.hasPrefix("mp:") {
+            return trimmed
+        }
+        if trimmed.hasPrefix("external/") || trimmed.hasPrefix("attachments/") {
+            return "mp:" + trimmed
+        }
+        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+            return nil
+        }
+        return "mp:" + trimmed
+    }
+
+    private func finishResolvedAsset(_ asset: String, imageURL: String, titleId: String) {
+        fputs("[discord-gateway] using media proxy asset: \(asset)\n", stderr)
+        UserDefaults.standard.set(["url": imageURL, "asset": asset], forKey: "discord_mp_asset_\(titleId)")
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            self.resolvedLargeImage = asset
+            if self.isIdentified {
+                self.sendPresenceUpdate()
+            }
+        }
+    }
+
     private func resolveExternalAsset(token: String, imageURL: String, titleId: String) {
-        guard let url = URL(string: "https://discord.com/api/v9/applications/\(DiscordGateway.applicationId)/external-assets") else { return }
+        requestDiscordExternalAsset(appId: DiscordGateway.applicationId, token: token, imageURL: imageURL) { [weak self] resolved in
+            guard let self = self else { return }
+            if let resolved = resolved {
+                self.finishResolvedAsset(resolved, imageURL: imageURL, titleId: titleId)
+                return
+            }
+            self.requestDiscordExternalAsset(appId: DiscordGateway.externalAssetFallbackAppId, token: token, imageURL: imageURL) { [weak self] fallbackResolved in
+                guard let self = self else { return }
+                if let fallbackResolved = fallbackResolved {
+                    self.finishResolvedAsset(fallbackResolved, imageURL: imageURL, titleId: titleId)
+                    return
+                }
+                self.requestKizzyProxyAsset(imageURL: imageURL) { [weak self] proxyResolved in
+                    guard let self = self, let proxyResolved = proxyResolved else { return }
+                    self.finishResolvedAsset(proxyResolved, imageURL: imageURL, titleId: titleId)
+                }
+            }
+        }
+    }
+
+    private func requestDiscordExternalAsset(appId: String, token: String, imageURL: String, completion: @escaping (String?) -> Void) {
+        guard let url = URL(string: "https://discord.com/api/v10/applications/\(appId)/external-assets") else {
+            completion(nil)
+            return
+        }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue(token, forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Discord iOS", forHTTPHeaderField: "User-Agent")
         let body: [String: Any] = ["urls": [imageURL]]
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        URLSession.shared.dataTask(with: req) { [weak self] data, response, error in
-            guard let self = self, let data = data else { return }
-            var assetPath: String?
+        URLSession.shared.dataTask(with: req) { [weak self] data, response, _ in
+            guard let self = self,
+                  let httpResp = response as? HTTPURLResponse,
+                  (200...299).contains(httpResp.statusCode),
+                  let data = data else {
+                if let httpResp = response as? HTTPURLResponse {
+                    fputs("[discord-gateway] external-assets (\(appId)) HTTP \(httpResp.statusCode)\n", stderr)
+                }
+                completion(nil)
+                return
+            }
+            var rawPath: String?
             if let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
                let first = arr.first {
-                assetPath = (first["external_asset_path"] as? String) ?? (first["external_asset_url"] as? String)
+                rawPath = (first["external_asset_path"] as? String) ?? (first["external_asset_url"] as? String)
             } else if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 if let assets = dict["assets"] as? [[String: Any]], let first = assets.first {
-                    assetPath = (first["external_asset_path"] as? String) ?? (first["external_asset_url"] as? String)
+                    rawPath = (first["external_asset_path"] as? String) ?? (first["external_asset_url"] as? String)
                 } else {
-                    assetPath = (dict["external_asset_path"] as? String) ?? (dict["external_asset_url"] as? String)
+                    rawPath = (dict["external_asset_path"] as? String) ?? (dict["external_asset_url"] as? String)
                 }
             }
-            if let resolved = assetPath, !resolved.isEmpty {
-                fputs("[discord-gateway] registered external asset proxy: \(resolved)\n", stderr)
-                UserDefaults.standard.set(resolved, forKey: "discord_asset_\(titleId)")
-                self.queue.async {
-                    self.resolvedLargeImage = resolved
-                    if self.isIdentified {
-                        self.sendPresenceUpdate()
-                    }
-                }
-            } else {
-                if let httpResp = response as? HTTPURLResponse {
-                    fputs("[discord-gateway] external-assets status: \(httpResp.statusCode)\n", stderr)
-                }
+            completion(self.normalizeProxyAsset(rawPath))
+        }.resume()
+    }
+
+    private func requestKizzyProxyAsset(imageURL: String, completion: @escaping (String?) -> Void) {
+        var comps = URLComponents(string: "https://kizzy-api.cjjdxhdjd.workers.dev/image")
+        comps?.queryItems = [URLQueryItem(name: "url", value: imageURL)]
+        guard let url = comps?.url else {
+            completion(nil)
+            return
+        }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 10
+        URLSession.shared.dataTask(with: req) { [weak self] data, response, _ in
+            guard let self = self,
+                  let httpResp = response as? HTTPURLResponse,
+                  (200...299).contains(httpResp.statusCode),
+                  let data = data,
+                  let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let rawId = dict["id"] as? String else {
+                completion(nil)
+                return
             }
+            completion(self.normalizeProxyAsset(rawId))
         }.resume()
     }
 
     private func connect(token: String) {
-        stop()
+        stopLocked()
         let url = URL(string: "wss://gateway.discord.gg/?v=10&encoding=json")!
-        let session = URLSession(configuration: .default, delegate: self, delegateQueue: OperationQueue())
+        let delegateQueue = OperationQueue()
+        delegateQueue.underlyingQueue = queue
+        delegateQueue.maxConcurrentOperationCount = 1
+        let session = URLSession(configuration: .default, delegate: self, delegateQueue: delegateQueue)
         webSocketTask = session.webSocketTask(with: url)
         webSocketTask?.resume()
         receiveMessage(token: token)
@@ -161,8 +248,10 @@ public final class DiscordGateway: NSObject, URLSessionWebSocketDelegate {
     private func startHeartbeat(interval: TimeInterval) {
         DispatchQueue.main.async { [weak self] in
             self?.heartbeatTimer?.invalidate()
-            self?.heartbeatTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
-                self?.sendHeartbeat()
+            self?.heartbeatTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+                self?.queue.async {
+                    self?.sendHeartbeat()
+                }
             }
         }
     }
@@ -200,9 +289,12 @@ public final class DiscordGateway: NSObject, URLSessionWebSocketDelegate {
     }
 
     public func updateStatus(desc: String) {
-        self.currentDesc = desc
-        if isIdentified {
-            sendPresenceUpdate()
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            self.currentDesc = desc
+            if self.isIdentified {
+                self.sendPresenceUpdate()
+            }
         }
     }
 
@@ -232,9 +324,10 @@ public final class DiscordGateway: NSObject, URLSessionWebSocketDelegate {
         let cleanId = gameId.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         if !cleanId.isEmpty {
             act["state"] = cleanId
-            let imageURL = resolvedLargeImage ?? defaultImageURL(cleanId: cleanId)
+        }
+        if let imageKey = resolvedLargeImage, !imageKey.isEmpty {
             act["assets"] = [
-                "large_image": imageURL,
+                "large_image": imageKey,
                 "large_text": gameName.isEmpty ? "Nintendo Switch" : gameName
             ]
         }
@@ -252,6 +345,12 @@ public final class DiscordGateway: NSObject, URLSessionWebSocketDelegate {
     }
 
     public func stop() {
+        queue.async { [weak self] in
+            self?.stopLocked()
+        }
+    }
+
+    private func stopLocked() {
         if isIdentified {
             let clearPayload: [String: Any] = [
                 "op": 3,
@@ -274,8 +373,8 @@ public final class DiscordGateway: NSObject, URLSessionWebSocketDelegate {
     }
 
     private func reconnect(token: String) {
-        stop()
-        DispatchQueue.global().asyncAfter(deadline: .now() + 5.0) { [weak self] in
+        stopLocked()
+        queue.asyncAfter(deadline: .now() + 5.0) { [weak self] in
             self?.connect(token: token)
         }
     }
